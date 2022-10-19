@@ -206,26 +206,12 @@ impl Mapping {
             language_tags
         };
 
-        let mut report = self
+        let mut _report = self
             .inner
             .expand(template, df, options.to_rust_expand_options())
             .map_err(MapperError::from)
             .map_err(PyMapperError::from)?;
-        if let Some(mut df) = report.minted_iris.take() {
-            let names_vec: Vec<String> =
-                    df.get_column_names()
-                    .into_iter()
-                    .map(|x| x.to_string())
-                    .collect();
-            let names: Vec<&str> = names_vec.iter().map(|x| x.as_str()).collect();
-            let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
-            let pyarrow = PyModule::import(py, "pyarrow")?;
-            let polars = PyModule::import(py, "polars")?;
-            let res = to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)?;
-            Ok(Some(res))
-        } else {
-            Ok(None)
-        }
+        Ok(None)
     }
 
     pub fn to_triples(&self) -> PyResult<Vec<Triple>> {
