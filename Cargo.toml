@@ -1,0 +1,6 @@
+[workspace]
+
+members=[
+    "stottrs",
+    "arrow_python_utils"
+]
