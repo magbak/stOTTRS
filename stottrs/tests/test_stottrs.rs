@@ -4,7 +4,7 @@ extern crate core;
 mod utils;
 
 use crate::utils::triples_from_file;
-use mapper::mapping::{ExpandOptions, Mapping, MintingOptions, ResolveIRI, SuffixGenerator};
+use stottrs::mapping::{ExpandOptions, Mapping, MintingOptions, ResolveIRI, SuffixGenerator};
 use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
 use polars::frame::DataFrame;
 use polars::series::Series;
@@ -21,13 +21,13 @@ fn testdata_path() -> PathBuf {
     let mut testdata_path = PathBuf::new();
     testdata_path.push(manidir);
     testdata_path.push("tests");
-    testdata_path.push("mapper_testdata");
+    testdata_path.push("stottrs_testdata");
     testdata_path
 }
 
 #[rstest]
 #[serial]
-fn test_mapper_easy_case(testdata_path: PathBuf) {
+fn test_stottrs_easy_case(testdata_path: PathBuf) {
     let t_str = r#"
     @prefix ex:<http://example.net/ns#>.
 
