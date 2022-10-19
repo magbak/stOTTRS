@@ -1,5 +1,3 @@
-mod resolve_columns;
-
 use super::Mapping;
 use crate::ast::{PType, Parameter, Signature};
 use crate::chrono::TimeZone as ChronoTimeZone;
@@ -40,20 +38,13 @@ impl Mapping {
         signature: &Signature,
         mut df: DataFrame,
         options: &ExpandOptions,
-    ) -> Result<(DataFrame, HashMap<String, MappedColumn>, Option<DataFrame>), MappingError> {
+    ) -> Result<(DataFrame, HashMap<String, MappedColumn>), MappingError> {
         let mut df_columns = HashSet::new();
         df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
         let removed = df_columns.remove("Key");
         assert!(removed);
 
         let mut map = HashMap::new();
-        let mut all_minted_iris = vec![];
-        let empty_path_column_map = HashMap::new();
-        let path_column_map = if let Some(m) = &options.resolve_iris {
-            m
-        } else {
-            &empty_path_column_map
-        };
         for parameter in &signature.parameter_list {
             let variable_name = &parameter.stottr_variable.name;
             if df_columns.contains(variable_name.as_str()) {
@@ -76,44 +67,6 @@ impl Mapping {
                     variable_name.to_string(),
                     MappedColumn::PrimitiveColumn(column_data_type),
                 );
-            } else if let Some(resolve_iri) = path_column_map.get(variable_name) {
-                self.resolve_iri_column(
-                    resolve_iri,
-                    variable_name.as_str(),
-                    &mut df,
-                    &mut df_columns,
-                )?;
-                map.insert(
-                    variable_name.to_string(),
-                    MappedColumn::PrimitiveColumn(PrimitiveColumn {
-                        rdf_node_type: RDFNodeType::IRI,
-                    }),
-                );
-            } else if options.mint_iris.is_some()
-                && options
-                    .mint_iris
-                    .as_ref()
-                    .unwrap()
-                    .contains_key(variable_name)
-            {
-                let minted_iris = self.mint_iri(
-                    &mut df,
-                    variable_name,
-                    &parameter.ptype,
-                    options
-                        .mint_iris
-                        .as_ref()
-                        .unwrap()
-                        .get(variable_name)
-                        .unwrap(),
-                );
-                all_minted_iris.push(minted_iris);
-                map.insert(
-                    variable_name.to_string(),
-                    MappedColumn::PrimitiveColumn(PrimitiveColumn {
-                        rdf_node_type: RDFNodeType::IRI,
-                    }),
-                );
             } else {
                 return Err(MappingError::MissingParameterColumn(
                     variable_name.to_string(),
@@ -125,14 +78,7 @@ impl Mapping {
                 df_columns.iter().map(|x| x.to_string()).collect(),
             ));
         }
-        let minted_iris_df;
-        if all_minted_iris.len() > 0 {
-            all_minted_iris.insert(0, df.column("Key").unwrap().clone());
-            minted_iris_df = Some(DataFrame::new(all_minted_iris).unwrap());
-        } else {
-            minted_iris_df = None;
-        }
-        Ok((df, map, minted_iris_df))
+        Ok((df, map))
     }
 }
 

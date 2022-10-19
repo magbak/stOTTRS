@@ -1,6 +1,5 @@
 pub mod errors;
 pub mod export_triples;
-mod mint;
 mod ntriples_write;
 mod validation;
 mod validation_inference;
@@ -30,56 +29,25 @@ use std::ops::{Deref, Not};
 use std::path::Path;
 
 pub struct Mapping {
-    minted_iris: HashMap<String, DataFrame>,
     template_dataset: TemplateDataset,
     object_property_triples: Option<DataFrame>,
     data_property_triples: Option<DataFrame>,
 }
 
-#[derive(Debug)]
-pub struct ResolveIRI {
-    pub key_column: String,
-    pub template: String,
-    pub argument: String,
-}
-
 pub struct ExpandOptions {
-    pub language_tags: Option<HashMap<String, String>>,
-    pub resolve_iris: Option<HashMap<String, ResolveIRI>>,
-    pub mint_iris: Option<HashMap<String, MintingOptions>>,
+    pub language_tags: Option<HashMap<String, String>>
 }
 
 impl Default for ExpandOptions {
     fn default() -> Self {
         ExpandOptions {
             language_tags: None,
-            resolve_iris: None,
-            mint_iris: None,
         }
     }
 }
 
-#[derive(Debug)]
-pub enum SuffixGenerator {
-    Numbering(usize),
-}
-
-#[derive(Debug)]
-pub enum ListLength {
-    Constant(usize),
-    SameAsColumn(String),
-}
-
-#[derive(Debug)]
-pub struct MintingOptions {
-    pub prefix: String,
-    pub suffix_generator: SuffixGenerator,
-    pub list_length: Option<ListLength>,
-}
-
 #[derive(Debug, PartialEq)]
 pub struct MappingReport {
-    pub minted_iris: Option<DataFrame>,
 }
 
 impl Mapping {
@@ -101,7 +69,6 @@ impl Mapping {
         .unwrap();
 
         Mapping {
-            minted_iris: HashMap::new(),
             template_dataset: template_dataset.clone(),
             object_property_triples: Some(object_property_dataframe),
             data_property_triples: Some(data_property_dataframe),
@@ -251,7 +218,7 @@ impl Mapping {
         self.validate_dataframe(&mut df)?;
         let target_template = self.resolve_template(template)?.clone();
         let target_template_name = target_template.signature.template_name.as_str().to_string();
-        let (df, columns, minted_iris) = self.find_validate_and_prepare_dataframe_columns(
+        let (df, columns) = self.find_validate_and_prepare_dataframe_columns(
             &target_template.signature,
             df,
             &options,
@@ -260,22 +227,7 @@ impl Mapping {
         self._expand(&target_template_name, df.lazy(), columns, &mut result_vec)?;
         self.process_results(result_vec);
 
-        if let Some(minted_iris_df) = &minted_iris {
-            if self.minted_iris.contains_key(&target_template_name) {
-                let existing = self.minted_iris.remove(&target_template_name).unwrap();
-                self.minted_iris.insert(
-                    target_template_name,
-                    concat([existing.lazy(), minted_iris_df.clone().lazy()], true)
-                        .unwrap()
-                        .collect()
-                        .unwrap(),
-                );
-            } else {
-                self.minted_iris
-                    .insert(target_template_name, minted_iris_df.clone());
-            }
-        }
-        Ok(MappingReport { minted_iris })
+        Ok(MappingReport { })
     }
 
     fn _expand(

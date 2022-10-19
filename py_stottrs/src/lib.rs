@@ -9,9 +9,6 @@ use arrow_python_utils::to_python::to_py_df;
 use stottrs::document::document_from_str;
 use stottrs::errors::MapperError;
 use stottrs::mapping::ExpandOptions as RustExpandOptions;
-use stottrs::mapping::MintingOptions as RustMintingOptions;
-use stottrs::mapping::ResolveIRI as RustResolveIRI;
-use stottrs::mapping::{ListLength, Mapping as InnerMapping, SuffixGenerator};
 use stottrs::templates::TemplateDataset;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
@@ -166,102 +163,15 @@ pub struct ResolveIRI {
     argument: String,
 }
 
-#[pymethods]
-impl ResolveIRI {
-    #[new]
-    pub fn new(key_column:String, template:String, argument:String) -> ResolveIRI {
-        ResolveIRI {
-            key_column,
-            template,
-            argument
-        }
-    }
-}
-
-impl ResolveIRI {
-    fn to_rust_resolve_iri(&self) -> RustResolveIRI {
-        RustResolveIRI {
-            key_column: self.key_column.clone(),
-            template: self.template.clone(),
-            argument: self.argument.clone()
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
-    pub language_tags: Option<HashMap<String, String>>,
-    pub resolve_iris: Option<HashMap<String, ResolveIRI>>,
-    pub mint_iris: Option<HashMap<String, MintingOptions>>,
+    pub language_tags: Option<HashMap<String, String>>
 }
 
 impl ExpandOptions {
     fn to_rust_expand_options(&self) -> RustExpandOptions {
-        let mut resolve_iris = None;
-        if let Some(resolve_map) = &self.resolve_iris {
-            let mut map = HashMap::new();
-            for (k, v) in resolve_map {
-                map.insert(k.clone(), v.to_rust_resolve_iri());
-            }
-            resolve_iris = Some(map);
-        }
-
-        let mut mint_iris = None;
-        if let Some(self_mint_iris) = &self.mint_iris {
-            let mut map = HashMap::new();
-            for (k, v) in self_mint_iris {
-                map.insert(k.clone(), v.to_rust_minting_options());
-            }
-            mint_iris = Some(map);
-        }
-
         RustExpandOptions {
             language_tags: self.language_tags.clone(),
-            resolve_iris,
-            mint_iris,
-        }
-    }
-}
-
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct MintingOptions {
-    pub prefix: String,
-    pub numbering_suffix_start: usize,
-    pub constant_list_length: Option<usize>,
-    pub same_as_column_list_length: Option<String>,
-}
-
-#[pymethods]
-impl MintingOptions {
-    #[new]
-    pub fn new(
-        prefix: String,
-        numbering_suffix_start: usize,
-        constant_list_length: Option<usize>,
-        same_as_column_list_length: Option<String>,
-    ) -> MintingOptions {
-        MintingOptions {
-            prefix,
-            numbering_suffix_start,
-            constant_list_length,
-            same_as_column_list_length,
-        }
-    }
-}
-
-impl MintingOptions {
-    fn to_rust_minting_options(&self) -> RustMintingOptions {
-        RustMintingOptions {
-            prefix: self.prefix.clone(),
-            suffix_generator: SuffixGenerator::Numbering(self.numbering_suffix_start),
-            list_length: if let Some(l) = &self.constant_list_length {
-                Some(ListLength::Constant(l.clone()))
-            } else if let Some(c) = &self.same_as_column_list_length {
-                Some(ListLength::SameAsColumn(c.clone()))
-            } else {
-                None
-            },
         }
     }
 }
@@ -288,15 +198,11 @@ impl Mapping {
         py: Python<'_>,
         template: &str,
         df: &PyAny,
-        resolve_iris: Option<HashMap<String, ResolveIRI>>,
-        mint_iris: Option<HashMap<String, MintingOptions>>,
         language_tags: Option<HashMap<String, String>>,
     ) -> PyResult<Option<PyObject>> {
         let df = polars_df_to_rust_df(&df)?;
         let options = ExpandOptions {
-            language_tags,
-            resolve_iris,
-            mint_iris,
+            language_tags
         };
 
         let mut report = self
