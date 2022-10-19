@@ -9,6 +9,7 @@ use arrow_python_utils::to_python::to_py_df;
 use stottrs::document::document_from_str;
 use stottrs::errors::MapperError;
 use stottrs::mapping::ExpandOptions as RustExpandOptions;
+use stottrs::mapping::Mapping as InnerMapping;
 use stottrs::templates::TemplateDataset;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
@@ -329,8 +330,6 @@ impl Mapping {
 #[pymodule]
 fn stottrs(_py: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<Mapping>()?;
-    m.add_class::<ResolveIRI>()?;
-    m.add_class::<MintingOptions>()?;
 
     Ok(())
 }
