@@ -14,6 +14,7 @@ use serial_test::serial;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::PathBuf;
+use polars::prelude::{col, IntoLazy};
 
 #[fixture]
 fn testdata_path() -> PathBuf {
@@ -643,12 +644,10 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
     my_list.rename("myList");
     let series = [k, object, predicate, my_list];
     let mut df = DataFrame::from_iter(series);
-    df = df
-        .groupby_stable(["Key", "object", "predicate"])
-        .unwrap()
-        .agg_list()
+    df = df.lazy()
+        .groupby_stable([col("Key"), col("object"), col("predicate")])
+        .agg([col("myList").list()]).collect()
         .unwrap();
-    df.rename("myList_agg_list", "myList").unwrap();
     //println!("{df}");
     let _report = mapping
         .expand(
@@ -721,19 +720,16 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
         "http://example.net/ns#obj2",
     ]);
     subject.rename("subject");
-    let mut my_list1 = Series::from_iter([Some(1), Some(2), Some(3), Some(4), None]);
+    let mut my_list1 = Series::from_iter([Some(1i32), Some(2), Some(3), Some(4), None]);
     my_list1.rename("myList1");
-    let mut my_list2 = Series::from_iter([5, 6, 7, 8, 9]);
+    let mut my_list2 = Series::from_iter([5i32, 6, 7, 8, 9]);
     my_list2.rename("myList2");
     let series = [k, subject, my_list1, my_list2];
     let mut df = DataFrame::from_iter(series);
-    df = df
-        .groupby_stable(["Key", "subject"])
-        .unwrap()
-        .agg_list()
+    df = df.lazy()
+        .groupby_stable([col("Key"), col("subject")])
+        .agg([col("myList1").list(), col("myList2").list()]).collect()
         .unwrap();
-    df.rename("myList1_agg_list", "myList1").unwrap();
-    df.rename("myList2_agg_list", "myList2").unwrap();
 
     //println!("{df}");
     let _report = mapping

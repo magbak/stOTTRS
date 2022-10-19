@@ -177,7 +177,7 @@ impl Mapping {
             .select(&[data_triple_expr.alias("")])
             .collect()
             .expect("Ok");
-        let mut out_df = concat([objects_df.lazy(), data_df.lazy()], true)
+        let mut out_df = concat([objects_df.lazy(), data_df.lazy()], true, true)
             .unwrap()
             .collect()
             .unwrap();
@@ -304,7 +304,7 @@ impl Mapping {
         let existing_object_properties = self.object_property_triples.take().unwrap();
         object_properties.push(existing_object_properties.lazy());
         self.object_property_triples = Some(
-            concat(object_properties, true)
+            concat(object_properties, true, true)
                 .unwrap()
                 .collect()
                 .expect("Collect after concat problem"),
@@ -313,7 +313,7 @@ impl Mapping {
         let existing_data_properties = self.data_property_triples.take().unwrap();
         data_properties.push(existing_data_properties.lazy());
         self.data_property_triples = Some(
-            concat(data_properties, true)
+            concat(data_properties, true, true)
                 .unwrap()
                 .collect()
                 .expect("Collect after concat problem"),
