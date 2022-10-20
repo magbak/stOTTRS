@@ -41,8 +41,6 @@ impl Mapping {
     ) -> Result<(DataFrame, HashMap<String, MappedColumn>), MappingError> {
         let mut df_columns = HashSet::new();
         df_columns.extend(df.get_column_names().into_iter().map(|x| x.to_string()));
-        let removed = df_columns.remove("Key");
-        assert!(removed);
 
         let mut map = HashMap::new();
         for parameter in &signature.parameter_list {

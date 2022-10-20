@@ -8,7 +8,7 @@ impl Mapping {
     where
         F: Fn(&str, &str, &str) -> T,
     {
-        if let Some(object_property_triples) = &self.object_property_triples {
+        for object_property_triples in &self.object_property_triples {
             if object_property_triples.height() > 0 {
                 let mut subject_iterator =
                     object_property_triples.column("subject").unwrap().iter();
@@ -21,8 +21,6 @@ impl Mapping {
                     out.push(func(s, v, o));
                 }
             }
-        } else {
-            panic!("")
         }
     }
 
@@ -31,7 +29,7 @@ impl Mapping {
         F: Fn(&str, &str, &str, Option<&str>, &str) -> T,
     {
         //subject, verb, lexical_form, language_tag, datatype
-        if let Some(data_property_triples) = &self.data_property_triples {
+        for data_property_triples in &self.data_property_triples {
             if data_property_triples.height() > 0 {
                 let mut subject_iterator = data_property_triples.column("subject").unwrap().iter();
                 let mut verb_iterator = data_property_triples.column("verb").unwrap().iter();
@@ -67,8 +65,6 @@ impl Mapping {
                     out.push(func(s, v, lex, lang_opt, dt));
                 }
             }
-        } else {
-            panic!("")
         }
     }
 
@@ -119,6 +115,7 @@ impl Mapping {
         triples
     }
 }
+
 fn anyutf8_to_str(a: AnyValue) -> &str {
     if let AnyValue::Utf8(s) = a {
         s

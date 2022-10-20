@@ -49,20 +49,9 @@ jobs:
         rustup toolchain install nightly-2022-09-13
         rustup default nightly-2022-09-13
 
-      #openssl-fix from https://stackoverflow.com/a/61921362
-    - name: Fix openssl
-      run: |
-        git clone https://github.com/microsoft/vcpkg
-        .\vcpkg\bootstrap-vcpkg.bat
-        .\vcpkg\vcpkg install openssl-windows:x64-windows
-        .\vcpkg\vcpkg install openssl:x64-windows-static
-      working-directory: .
-
     - name: Build wheels
       run: |
         ../venv/Scripts/activate
-        $env:OPENSSL_DIR='D:/a/stottrs/stottrs/vcpkg/installed/x64-windows-static'
-        $env:VCPKGRS_DYNAMIC=1
         maturin build
       working-directory: ./py_stottrs
 

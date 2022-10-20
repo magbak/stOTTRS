@@ -1,7 +1,6 @@
 pub mod errors;
 pub mod export_triples;
 mod ntriples_write;
-mod validation;
 mod validation_inference;
 
 use crate::ast::{
@@ -13,12 +12,11 @@ use crate::document::document_from_str;
 use crate::mapping::errors::MappingError;
 use crate::mapping::validation_inference::{MappedColumn, PrimitiveColumn, RDFNodeType};
 use crate::templates::TemplateDataset;
-use ntriples_write::write_ntriples;
 use oxrdf::vocab::xsd;
 use oxrdf::NamedNode;
-use polars::lazy::prelude::{col, concat, Expr, LiteralValue};
+use polars::lazy::prelude::{col, Expr, LiteralValue};
 use polars::prelude::{
-    concat_lst, concat_str, AnyValue, DataFrame, DataType, Field, IntoLazy, LazyFrame, PolarsError,
+    concat_lst, AnyValue, DataFrame, DataType, IntoLazy, LazyFrame, PolarsError,
     Series, SpecialEq,
 };
 use polars::prelude::{IntoSeries, StructChunked};
@@ -30,8 +28,8 @@ use std::path::Path;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
-    object_property_triples: Option<DataFrame>,
-    data_property_triples: Option<DataFrame>,
+    object_property_triples: Vec<DataFrame>,
+    data_property_triples: Vec<DataFrame>,
 }
 
 pub struct ExpandOptions {
@@ -46,32 +44,21 @@ impl Default for ExpandOptions {
     }
 }
 
+enum TripleType {
+    ObjectProperty,
+    DataProperty
+}
+
 #[derive(Debug, PartialEq)]
 pub struct MappingReport {
 }
 
 impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
-        let utf8 = DataType::Utf8;
-        let object_property_dataframe = DataFrame::new(vec![
-            Series::new_empty("Key", &utf8),
-            Series::new_empty("subject", &utf8),
-            Series::new_empty("verb", &utf8),
-            Series::new_empty("object", &utf8),
-        ])
-        .unwrap();
-        let data_property_dataframe = DataFrame::new(vec![
-            Series::new_empty("Key", &utf8),
-            Series::new_empty("subject", &utf8),
-            Series::new_empty("verb", &utf8),
-            Series::new_empty("object", &DataType::Struct(literal_struct_fields())),
-        ])
-        .unwrap();
-
         Mapping {
             template_dataset: template_dataset.clone(),
-            object_property_triples: Some(object_property_dataframe),
-            data_property_triples: Some(data_property_dataframe),
+            object_property_triples: vec![],
+            data_property_triples: vec![],
         }
     }
 
@@ -101,88 +88,8 @@ impl Mapping {
         Ok(Mapping::new(&dataset))
     }
 
-    pub fn write_n_triples(&self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
-        //TODO: Refactor all of this stuff.. obviously poorly thought out..
-        let constant_utf8_series = |s, n| {
-            Expr::Literal(LiteralValue::Series(SpecialEq::new(
-                Series::new_empty("lbrace", &DataType::Utf8)
-                    .extend_constant(AnyValue::Utf8(s), n)
-                    .unwrap(),
-            )))
-        };
-        let braces_expr = |colname, n| {
-            concat_str(
-                [
-                    constant_utf8_series("<", n),
-                    col(colname),
-                    constant_utf8_series(">", n),
-                ],
-                "",
-            )
-        };
-
-        let n_object_property_triples = self.object_property_triples.as_ref().unwrap().height();
-        let subject_expr = braces_expr("subject", n_object_property_triples);
-        let verb_expr = braces_expr("verb", n_object_property_triples);
-        let object_expr = braces_expr("object", n_object_property_triples);
-        let triple_expr = concat_str(
-            [
-                subject_expr,
-                verb_expr,
-                object_expr,
-                constant_utf8_series(".", n_object_property_triples),
-            ],
-            " ",
-        );
-        let objects_df = self
-            .object_property_triples
-            .as_ref()
-            .unwrap()
-            .clone()
-            .lazy()
-            .select(&[triple_expr.alias("")])
-            .collect()
-            .expect("Ok");
-
-        let n_data_property_triples = self.data_property_triples.as_ref().unwrap().height();
-        let data_subject_expr = braces_expr("subject", n_data_property_triples);
-        let data_verb_expr = braces_expr("verb", n_data_property_triples);
-        let data_object_expr = concat_str(
-            [
-                constant_utf8_series("\"", n_data_property_triples),
-                col("object").struct_().field_by_name("lexical_form"),
-                constant_utf8_series("\"", n_data_property_triples),
-                constant_utf8_series("^^", n_data_property_triples),
-                constant_utf8_series("<", n_data_property_triples),
-                col("object").struct_().field_by_name("datatype_iri"),
-                constant_utf8_series(">", n_data_property_triples),
-            ],
-            "",
-        );
-        let data_triple_expr = concat_str(
-            [
-                data_subject_expr,
-                data_verb_expr,
-                data_object_expr,
-                constant_utf8_series(".", n_data_property_triples),
-            ],
-            " ",
-        );
-        let data_df = self
-            .data_property_triples
-            .as_ref()
-            .unwrap()
-            .clone()
-            .lazy()
-            .select(&[data_triple_expr.alias("")])
-            .collect()
-            .expect("Ok");
-        let mut out_df = concat([objects_df.lazy(), data_df.lazy()], true, true)
-            .unwrap()
-            .collect()
-            .unwrap();
-        out_df.as_single_chunk_par();
-        write_ntriples(buffer, &out_df, 1024).unwrap();
+    pub fn write_n_triples(&mut self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
+        self.write_n_triples_all_dfs(buffer, 1024).unwrap();
         Ok(())
     }
 
@@ -212,10 +119,9 @@ impl Mapping {
     pub fn expand(
         &mut self,
         template: &str,
-        mut df: DataFrame,
+        df: DataFrame,
         options: ExpandOptions,
     ) -> Result<MappingReport, MappingError> {
-        self.validate_dataframe(&mut df)?;
         let target_template = self.resolve_template(template)?.clone();
         let target_template_name = target_template.signature.template_name.as_str().to_string();
         let (df, columns) = self.find_validate_and_prepare_dataframe_columns(
@@ -240,7 +146,7 @@ impl Mapping {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                let keep_cols = vec![col("Key"), col("subject"), col("verb"), col("object")];
+                let keep_cols = vec![col("subject"), col("verb"), col("object")];
                 lf = lf.select(keep_cols.as_slice());
                 new_lfs_columns.push((lf, columns));
                 Ok(())
@@ -279,7 +185,7 @@ impl Mapping {
                         df = df
                             .drop_nulls(Some(&["subject".to_string(), "object".to_string()]))
                             .unwrap();
-                        object_properties.push(df.lazy());
+                        object_properties.push(df);
                     }
                     RDFNodeType::BlankNode => {}
                     RDFNodeType::Literal => {
@@ -295,29 +201,14 @@ impl Mapping {
                         df = df
                             .drop_nulls(Some(&["subject".to_string(), "verb".to_string()]))
                             .unwrap();
-                        data_properties.push(df.lazy());
+                        data_properties.push(df);
                     }
                     RDFNodeType::None => {}
                 },
             }
         }
-        let existing_object_properties = self.object_property_triples.take().unwrap();
-        object_properties.push(existing_object_properties.lazy());
-        self.object_property_triples = Some(
-            concat(object_properties, true, true)
-                .unwrap()
-                .collect()
-                .expect("Collect after concat problem"),
-        );
-
-        let existing_data_properties = self.data_property_triples.take().unwrap();
-        data_properties.push(existing_data_properties.lazy());
-        self.data_property_triples = Some(
-            concat(data_properties, true, true)
-                .unwrap()
-                .collect()
-                .expect("Collect after concat problem"),
-        );
+        self.object_property_triples.extend(object_properties);
+        self.data_property_triples.extend(data_properties);
     }
 }
 
@@ -371,8 +262,7 @@ fn create_remapped_lazy_frame(
     }
 
     lf = lf.rename(existing.as_slice(), new.as_slice());
-    let mut new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
-    new_column_expressions.push(col("Key"));
+    let new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
     lf = lf.select(new_column_expressions.as_slice());
     for e in expressions {
         lf = lf.with_column(e);
@@ -517,10 +407,3 @@ fn is_blank_node(s: &str) -> bool {
     s.starts_with("_:")
 }
 
-fn literal_struct_fields() -> Vec<Field> {
-    vec![
-        Field::new("lexical_form", DataType::Utf8),
-        Field::new("language_tag", DataType::Utf8),
-        Field::new("datatype_iri", DataType::Utf8),
-    ]
-}

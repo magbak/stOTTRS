@@ -39,13 +39,11 @@ fn test_stottrs_easy_case(testdata_path: PathBuf) {
       } .
     "#;
 
-    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
-    k.rename("Key");
     let mut v1 = Series::from_iter(&[1, 2i32]);
     v1.rename("myVar1");
     let mut v2 = Series::from_iter(&[3, 4i32]);
     v2.rename("myVar2");
-    let series = [k, v1, v2];
+    let series = [v1, v2];
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
@@ -82,14 +80,12 @@ fn test_all_iri_case() {
       } .
     "#;
 
-    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
-    k.rename("Key");
     let mut v1 = Series::from_iter([
         "http://example.net/ns#OneThing",
         "http://example.net/ns#AnotherThing",
     ]);
     v1.rename("myVar1");
-    let series = [k, v1];
+    let series = [v1];
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
@@ -133,11 +129,9 @@ fn test_string_language_tag_cases() {
       } .
     "#;
 
-    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
-    k.rename("Key");
     let mut my_string = Series::from_iter(["one", "two"]);
     my_string.rename("myString");
-    let series = [k, my_string];
+    let series = [my_string];
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
@@ -195,14 +189,12 @@ fn test_const_list_case() {
       } .
     "#;
 
-    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
-    k.rename("Key");
     let mut v1 = Series::from_iter([
         "http://example.net/ns#OneThing",
         "http://example.net/ns#AnotherThing",
     ]);
     v1.rename("var1");
-    let series = [k, v1];
+    let series = [v1];
     let df = DataFrame::from_iter(series);
 
     let mut mapping = Mapping::from_str(&t_str).unwrap();
@@ -271,13 +263,11 @@ ex:Nested [?myVar] :: {
 } .
 "#;
     let mut mapping = Mapping::from_str(&stottr).unwrap();
-    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
-    k.rename("Key");
     let mut v1 = Series::from_iter(&[1, 2i32]);
     v1.rename("myVar1");
     let mut v2 = Series::from_iter(&[3, 4i32]);
     v2.rename("myVar2");
-    let series = [k, v1, v2];
+    let series = [v1, v2];
     let df = DataFrame::from_iter(series);
     let _report = mapping
         .expand(
@@ -361,8 +351,6 @@ ex:ExampleTemplate [
   } .
 "#;
     let mut mapping = Mapping::from_str(&stottr).unwrap();
-    let mut k = Series::from_iter(["KeyOne", "KeyTwo"]);
-    k.rename("Key");
     let mut boolean = Series::from_iter(&[true, false]);
     boolean.rename("Boolean");
     let mut uint32 = Series::from_iter(&[5u32, 6u32]);
@@ -405,7 +393,6 @@ ex:ExampleTemplate [
     .unwrap();
 
     let series = [
-        k,
         boolean,
         uint32,
         uint64,
@@ -624,8 +611,6 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
   } .
 "#;
     let mut mapping = Mapping::from_str(&stottr).unwrap();
-    let mut k = Series::from_iter(["KeyOne", "KeyOne", "KeyTwo", "KeyTwo"]);
-    k.rename("Key");
     let mut object = Series::from_iter([
         "http://example.net/ns#obj1",
         "http://example.net/ns#obj1",
@@ -642,10 +627,10 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
     predicate.rename("predicate");
     let mut my_list = Series::from_iter([1i32, 2, 3, 4]);
     my_list.rename("myList");
-    let series = [k, object, predicate, my_list];
+    let series = [object, predicate, my_list];
     let mut df = DataFrame::from_iter(series);
     df = df.lazy()
-        .groupby_stable([col("Key"), col("object"), col("predicate")])
+        .groupby_stable([col("object"), col("predicate")])
         .agg([col("myList").list()]).collect()
         .unwrap();
     //println!("{df}");
@@ -710,8 +695,6 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
 } .
 "#;
     let mut mapping = Mapping::from_str(&stottr).unwrap();
-    let mut k = Series::from_iter(["KeyOne", "KeyOne", "KeyTwo", "KeyTwo", "KeyTwo"]);
-    k.rename("Key");
     let mut subject = Series::from_iter([
         "http://example.net/ns#obj1",
         "http://example.net/ns#obj1",
@@ -724,10 +707,10 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
     my_list1.rename("myList1");
     let mut my_list2 = Series::from_iter([5i32, 6, 7, 8, 9]);
     my_list2.rename("myList2");
-    let series = [k, subject, my_list1, my_list2];
+    let series = [subject, my_list1, my_list2];
     let mut df = DataFrame::from_iter(series);
     df = df.lazy()
-        .groupby_stable([col("Key"), col("subject")])
+        .groupby_stable([col("subject")])
         .agg([col("myList1").list(), col("myList2").list()]).collect()
         .unwrap();
 
