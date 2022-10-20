@@ -17,8 +17,7 @@ doc = """
     """
 
 #Define a data frame to instantiate:
-df = pl.DataFrame({"Key": ["A", "B"],
-                   "MyValue": [1, 2]})
+df = pl.DataFrame({"MyValue": [1, 2]})
 #Create a mapping object
 mapping = Mapping([doc])
 #Expand the template using the data in the dataframe
