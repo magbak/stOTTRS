@@ -4,7 +4,6 @@ mod error;
 
 use crate::error::PyMapperError;
 use arrow_python_utils::to_rust::polars_df_to_rust_df;
-use arrow_python_utils::to_python::to_py_df;
 
 use stottrs::document::document_from_str;
 use stottrs::errors::MapperError;
@@ -196,7 +195,6 @@ impl Mapping {
 
     pub fn expand(
         &mut self,
-        py: Python<'_>,
         template: &str,
         df: &PyAny,
         language_tags: Option<HashMap<String, String>>,
@@ -305,7 +303,7 @@ impl Mapping {
         Ok(triples)
     }
 
-    pub fn write_ntriples(&self, path:&str) -> PyResult<()> {
+    pub fn write_ntriples(&mut self, path:&str) -> PyResult<()> {
         let path_buf = PathBuf::from(path);
         let mut actual_file = File::create(path_buf.as_path()).map_err(|x|PyMapperError::IOError(x))?;
         self.inner.write_n_triples(&mut actual_file).unwrap();

@@ -9,8 +9,7 @@ def test_create_mapping_from_polars_df():
     } .
     """
 
-    df = pl.DataFrame({"Key": ["A", "B"],
-                       "MyValue": [1, 2]})
+    df = pl.DataFrame({"MyValue": [1, 2]})
     mapping = Mapping([doc])
     mapping.expand("http://example.net/ns#ExampleTemplate", df)
     triples = mapping.to_triples()
