@@ -37,7 +37,7 @@ An example mapping is provided in [this jupyter notebook](https://github.com/mag
 The Python API is documented [here](https://github.com/magbak/stottrstree/main/doc/python_mapper_api.md)
 
 ## Installing pre-built wheels
-From the latest [release](https://github.com/magbak/stottrsreleases), copy the appropriate .whl-file for your system, then run:
+From the latest [release](https://github.com/magbak/stottrsreleases), copy the appropriate .whl-file for your system, then run e.g.:
 ```shell
 pip install https://github.com/magbak/stottrsreleases/download/v0.1.5/stottrs-0.1.12-cp310-cp310-manylinux_2_31_x86_64.whl
 ```
