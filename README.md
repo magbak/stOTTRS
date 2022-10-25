@@ -33,13 +33,13 @@ Results in:
  <http://example.net/ns#myObject> <http://example.net/ns#hasValue> "2"^^<http://www.w3.org/2001/XMLSchema#long>]
 ```
 
-An example mapping is provided in [this jupyter notebook](https://github.com/magbak/stottrstree/main/doc/rds_mapping.ipynb).
-The Python API is documented [here](https://github.com/magbak/stottrstree/main/doc/python_mapper_api.md)
+An example mapping is provided in [this jupyter notebook](https://github.com/magbak/stottrs/tree/main/doc/rds_mapping.ipynb).
+The Python API is documented [here](https://github.com/magbak/stottrs/tree/main/doc/python_mapper_api.md)
 
 ## Installing pre-built wheels
-From the latest [release](https://github.com/magbak/stottrsreleases), copy the appropriate .whl-file for your system, then run e.g.:
+From the latest [release](https://github.com/magbak/stottrs/releases), copy the appropriate .whl-file for your system, then run e.g.:
 ```shell
-pip install https://github.com/magbak/stottrsreleases/download/v0.1.5/stottrs-0.1.12-cp310-cp310-manylinux_2_31_x86_64.whl
+pip install https://github.com/magbak/stOTTRs/releases/download/v0.1.45/stottr-0.1.45-cp310-cp310-manylinux_2_31_x86_64.whl
 ```
 
 All code is licensed to [Prediktor AS](https://www.prediktor.com/) under the Apache 2.0 license unless otherwise noted, and has been financed by [The Research Council of Norway](https://www.forskningsradet.no/en/) (grant no. 316656) and [Prediktor AS](https://www.prediktor.com/) as part of a PhD Degree.  
