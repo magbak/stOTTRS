@@ -33,8 +33,7 @@ Results in:
  <http://example.net/ns#myObject> <http://example.net/ns#hasValue> "2"^^<http://www.w3.org/2001/XMLSchema#long>]
 ```
 
-An example mapping is provided in [this jupyter notebook](https://github.com/magbak/stottrstree/main/doc/mapping.ipynb).
-
+An example mapping is provided in [this jupyter notebook](https://github.com/magbak/stottrstree/main/doc/rds_mapping.ipynb).
 The Python API is documented [here](https://github.com/magbak/stottrstree/main/doc/python_mapper_api.md)
 
 ## Installing pre-built wheels
