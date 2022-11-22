@@ -1,8 +1,6 @@
 mod constant_terms;
 pub mod default;
 pub mod errors;
-pub mod export_triples;
-mod ntriples_write;
 mod validation_inference;
 
 use crate::ast::{Instance, ListExpanderType, Signature, StottrTerm, Template};
@@ -10,20 +8,19 @@ use crate::constants::OTTR_TRIPLE;
 use crate::document::document_from_str;
 use crate::mapping::constant_terms::constant_to_expr;
 use crate::mapping::errors::MappingError;
-use crate::mapping::validation_inference::{MappedColumn, PrimitiveColumn, RDFNodeType};
 use crate::templates::TemplateDataset;
 use polars::lazy::prelude::{col, Expr};
 use polars::prelude::{DataFrame, IntoLazy, LazyFrame, PolarsError};
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
-use std::ops::Not;
 use std::path::Path;
+use oxrdf::{NamedNode, Triple};
+use crate::triplestore::Triplestore;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
-    object_property_triples: Vec<DataFrame>,
-    data_property_triples: Vec<DataFrame>,
+    triplestore: Triplestore
 }
 
 pub struct ExpandOptions {
@@ -38,9 +35,18 @@ impl Default for ExpandOptions {
     }
 }
 
-enum TripleType {
-    ObjectProperty,
-    DataProperty,
+#[derive(Clone, Debug)]
+pub struct PrimitiveColumn {
+    pub rdf_node_type: RDFNodeType,
+    pub language_tag: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RDFNodeType {
+    IRI,
+    BlankNode,
+    Literal(NamedNode),
+    None,
 }
 
 #[derive(Debug, PartialEq)]
@@ -50,8 +56,7 @@ impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
         Mapping {
             template_dataset: template_dataset.clone(),
-            object_property_triples: vec![],
-            data_property_triples: vec![],
+            triplestore: Triplestore::new()
         }
     }
 
@@ -82,8 +87,12 @@ impl Mapping {
     }
 
     pub fn write_n_triples(&mut self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
-        self.write_n_triples_all_dfs(buffer, 1024).unwrap();
+        self.triplestore.write_n_triples_all_dfs(buffer, 1024).unwrap();
         Ok(())
+    }
+
+    pub fn export_oxrdf_triples(&self) -> Vec<Triple> {
+        self.triplestore.export_oxrdf_triples()
     }
 
     fn resolve_template(&self, s: &str) -> Result<&Template, MappingError> {
@@ -117,10 +126,10 @@ impl Mapping {
     ) -> Result<MappingReport, MappingError> {
         let target_template = self.resolve_template(template)?.clone();
         let target_template_name = target_template.signature.template_name.as_str().to_string();
-        let (df, columns) = self.find_validate_and_prepare_dataframe_columns(
+        let columns = self.validate_infer_dataframe_columns(
             &target_template.signature,
-            df,
-            &options,
+            &df,
+            &options
         )?;
         let mut result_vec = vec![];
         self._expand(&target_template_name, df.lazy(), columns, &mut result_vec)?;
@@ -133,8 +142,8 @@ impl Mapping {
         &self,
         name: &str,
         mut lf: LazyFrame,
-        columns: HashMap<String, MappedColumn>,
-        new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, MappedColumn>)>,
+        columns: HashMap<String, PrimitiveColumn>,
+        new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, PrimitiveColumn>)>,
     ) -> Result<(), MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
@@ -167,41 +176,12 @@ impl Mapping {
         }
     }
 
-    fn process_results(&mut self, result_vec: Vec<(LazyFrame, HashMap<String, MappedColumn>)>) {
-        let mut object_properties = vec![];
-        let mut data_properties = vec![];
-        for (lf, columns) in result_vec {
-            let mut df = lf.collect().expect("Collect problem");
-            match columns.get("object").unwrap() {
-                MappedColumn::PrimitiveColumn(c) => match c.rdf_node_type {
-                    RDFNodeType::IRI => {
-                        df = df
-                            .drop_nulls(Some(&["subject".to_string(), "object".to_string()]))
-                            .unwrap();
-                        object_properties.push(df);
-                    }
-                    RDFNodeType::BlankNode => {}
-                    RDFNodeType::Literal => {
-                        let lexical_form_null = df
-                            .column("object")
-                            .unwrap()
-                            .struct_()
-                            .unwrap()
-                            .field_by_name("lexical_form")
-                            .unwrap()
-                            .is_null();
-                        df = df.filter(&lexical_form_null.not()).unwrap();
-                        df = df
-                            .drop_nulls(Some(&["subject".to_string(), "verb".to_string()]))
-                            .unwrap();
-                        data_properties.push(df);
-                    }
-                    RDFNodeType::None => {}
-                },
-            }
+    fn process_results(&mut self, result_vec: Vec<(LazyFrame, HashMap<String, PrimitiveColumn>)>) {
+        for (lf, mut columns) in result_vec {
+            let df = lf.collect().expect("Collect problem");
+            let PrimitiveColumn{rdf_node_type, language_tag} = columns.remove("object").unwrap();
+            self.triplestore.add_triples(df, rdf_node_type, language_tag);
         }
-        self.object_property_triples.extend(object_properties);
-        self.data_property_triples.extend(data_properties);
     }
 }
 
@@ -209,8 +189,8 @@ fn create_remapped_lazy_frame(
     instance: &Instance,
     signature: &Signature,
     mut lf: LazyFrame,
-    columns: &HashMap<String, MappedColumn>,
-) -> Result<(LazyFrame, HashMap<String, MappedColumn>), MappingError> {
+    columns: &HashMap<String, PrimitiveColumn>,
+) -> Result<(LazyFrame, HashMap<String, PrimitiveColumn>), MappingError> {
     let mut new_map = HashMap::new();
     let mut existing = vec![];
     let mut new = vec![];
@@ -235,9 +215,9 @@ fn create_remapped_lazy_frame(
                 }
             }
             StottrTerm::ConstantTerm(ct) => {
-                let (expr, _, rdf_node_type) = constant_to_expr(ct, &target.ptype)?;
+                let (expr, _, rdf_node_type, language_tag) = constant_to_expr(ct, &target.ptype)?;
                 let mapped_column =
-                    MappedColumn::PrimitiveColumn(PrimitiveColumn { rdf_node_type });
+                    PrimitiveColumn { rdf_node_type, language_tag };
                 expressions.push(expr.alias(&target.stottr_variable.name));
                 new_map.insert(target.stottr_variable.name.clone(), mapped_column);
             }
@@ -280,6 +260,3 @@ fn create_remapped_lazy_frame(
     Ok((lf, new_map))
 }
 
-fn is_blank_node(s: &str) -> bool {
-    s.starts_with("_:")
-}
