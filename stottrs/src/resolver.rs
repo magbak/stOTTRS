@@ -169,6 +169,7 @@ fn resolve_instance(
     Ok(Instance {
         list_expander: unresolved_instance.list_expander.clone(),
         template_name: resolve(&unresolved_instance.template_name, prefix_map)?,
+        prefixed_template_name: get_name(&unresolved_instance.template_name),
         argument_list,
     })
 }

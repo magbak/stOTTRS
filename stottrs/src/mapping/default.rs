@@ -100,6 +100,7 @@ impl Mapping {
                 patterns.push(Instance {
                     list_expander: None,
                     template_name: NamedNode::new(OTTR_TRIPLE).unwrap(),
+                    prefixed_template_name: "ottr:Triple".to_string(),
                     argument_list: vec![
                         Argument {
                             list_expand: false,

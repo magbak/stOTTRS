@@ -32,15 +32,15 @@ pub struct Template {
 impl Display for Template {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.signature, f)?;
-        write!(f, " :: {{\n")?;
+        writeln!(f, " :: {{")?;
         for (idx, inst) in self.pattern_list.iter().enumerate() {
             write!(f, "  ")?;
-            inst.fmt(f)?;
+            std::fmt::Display::fmt(inst, f)?;
             if idx + 1 != self.pattern_list.len() {
-                write!(f, " ,\n")?;
+                writeln!(f, " ,")?;
             }
         }
-        write!(f, "}} . \n")
+        writeln!(f, "\n}} . ")
     }
 }
 
@@ -237,7 +237,26 @@ impl Display for StottrLiteral {
 pub struct Instance {
     pub list_expander: Option<ListExpanderType>,
     pub template_name: NamedNode,
+    pub prefixed_template_name: String,
     pub argument_list: Vec<Argument>,
+}
+
+impl Display for Instance {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(le) =  &self.list_expander {
+            std::fmt::Display::fmt(le, f)?;
+            write!(f, " | ")?;
+        }
+        write!(f, "{}", &self.prefixed_template_name)?;
+        write!(f, "(")?;
+        for (idx, a) in self.argument_list.iter().enumerate() {
+            std::fmt::Display::fmt(a, f)?;
+            if idx + 1 != self.argument_list.len() {
+                write!(f, ",")?;
+            }
+        }
+        write!(f, ")")
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -249,6 +268,15 @@ pub struct Annotation {
 pub struct Argument {
     pub list_expand: bool,
     pub term: StottrTerm,
+}
+
+impl Display for Argument {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if self.list_expand {
+            write!(f, "++ ")?;
+        }
+        std::fmt::Display::fmt(&self.term, f)
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -269,11 +297,44 @@ impl ListExpanderType {
     }
 }
 
+impl Display for ListExpanderType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ListExpanderType::Cross => {write!(f, "cross")}
+            ListExpanderType::ZipMin => {write!(f, "zipMin")}
+            ListExpanderType::ZipMax => {write!(f, "zipMax")}
+        }
+    }
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum StottrTerm {
     Variable(StottrVariable),
     ConstantTerm(ConstantTerm),
     List(Vec<StottrTerm>),
+}
+
+impl Display for StottrTerm {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StottrTerm::Variable(var) => {
+                std::fmt::Display::fmt(var, f)
+            }
+            StottrTerm::ConstantTerm(ct) => {
+                std::fmt::Display::fmt(ct, f)
+            }
+            StottrTerm::List(li) => {
+                write!(f, "(")?;
+                for (idx, el) in li.iter().enumerate() {
+                    std::fmt::Display::fmt(el, f)?;
+                    if idx +1 != li.len() {
+                        write!(f, ", ")?;
+                    }
+                }
+                write!(f, ")")
+            }
+        }
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -306,9 +367,10 @@ fn test_display_easy_template() {
         Instance{
             list_expander: None,
             template_name: NamedNode::new(OTTR_TRIPLE).unwrap(),
+            prefixed_template_name: "ottr:Triple".to_string(),
             argument_list: vec![Argument { list_expand: false, term: StottrTerm::Variable(StottrVariable { name: "myVar".to_string() }) }],
         }
     ] } ;
 
-    println!("{}", template);
+    assert_eq!(format!("{}", template), "prefix:Templ [?! xsd:double ?myVar = \"0.1\"^^<http://www.w3.org/2001/XMLSchema#double> ] :: {\n  ottr:Triple(?myVar)\n} . \n".to_string());
 }
