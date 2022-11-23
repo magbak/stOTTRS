@@ -27,6 +27,7 @@ use polars::series::SeriesIter;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use std::io::Write;
+use oxrdf::NamedNode;
 use crate::triplestore::conversion::convert_to_string;
 use crate::triplestore::TripleType;
 use super::Triplestore;
@@ -53,15 +54,15 @@ impl Triplestore {
 
         for df in &mut self.get_mut_object_property_triples() {
             df.as_single_chunk_par();
-            write_ntriples_for_df(df, writer, chunk_size, TripleType::ObjectProperty, n_threads, &mut any_value_iter_pool, &mut write_buffer_pool)?;
+            write_ntriples_for_df(df, &None, writer, chunk_size, TripleType::ObjectProperty, n_threads, &mut any_value_iter_pool, &mut write_buffer_pool)?;
         }
         for df in &mut self.get_mut_string_property_triples() {
             df.as_single_chunk_par();
-            write_ntriples_for_df(df, writer, chunk_size, TripleType::StringProperty, n_threads, &mut any_value_iter_pool, &mut write_buffer_pool)?;
+            write_ntriples_for_df(df, &None, writer, chunk_size, TripleType::StringProperty, n_threads, &mut any_value_iter_pool, &mut write_buffer_pool)?;
         }
-        for (df,_) in &mut self.get_mut_non_string_property_triples() {
+        for (df,dt) in &mut self.get_mut_non_string_property_triples() {
             df.as_single_chunk_par();
-            write_ntriples_for_df(df, writer, chunk_size, TripleType::NonStringProperty, n_threads, &mut any_value_iter_pool, &mut write_buffer_pool)?;
+            write_ntriples_for_df(df, &Some(dt.clone()), writer, chunk_size, TripleType::NonStringProperty, n_threads, &mut any_value_iter_pool, &mut write_buffer_pool)?;
         }
 
         Ok(())
@@ -70,6 +71,7 @@ impl Triplestore {
 
 fn write_ntriples_for_df<W: Write + ?Sized>(
     df: &DataFrame,
+    dt: &Option<NamedNode>,
     writer: &mut W,
     chunk_size: usize,
     triple_type: TripleType,
@@ -77,6 +79,16 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
     any_value_iter_pool: &mut LowContentionPool<Vec<SeriesIter>>,
     write_buffer_pool: &mut LowContentionPool<Vec<u8>>
 ) -> Result<()>{
+        let dt_str = if triple_type == TripleType::NonStringProperty {
+            if let Some(nn) = dt {
+                Some(nn.as_str())
+            } else {
+                panic!("Must have datatype for non string property")
+            }
+        } else {
+            None
+        };
+
         let len = df.height();
 
         let total_rows_per_pool_iter = n_threads * chunk_size;
@@ -137,7 +149,7 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
                                 write_string_property_triple(&mut write_buffer, any_values);
                             }
                             TripleType::NonStringProperty => {
-                                write_non_string_property_triple(&mut write_buffer, any_values);
+                                write_non_string_property_triple(&mut write_buffer, dt_str.unwrap(), any_values);
                             }
                         }
                     }
@@ -164,29 +176,25 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
 }
 
 fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) {
-    let mut obj_struct = if let AnyValue::Struct(s, _) = any_values.pop().unwrap() {s} else {panic!()};
-    let dt = if let AnyValue::Utf8(lang) = obj_struct.pop().unwrap() {lang} else {panic!()};
-    let lang = if let AnyValue::Utf8(lang) = obj_struct.pop().unwrap() {lang} else {panic!()};
-    let lex = if let AnyValue::Utf8(lang) = obj_struct.pop().unwrap() {lang} else {panic!()};
+    let lang_opt = if let AnyValue::Utf8(lang) = any_values.pop().unwrap() {Some(lang)} else {None};
+    let lex = if let AnyValue::Utf8(lex) = any_values.pop().unwrap() {lex} else {panic!()};
     let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {v} else {panic!()};
     let s = if let AnyValue::Utf8(s) = any_values.pop().unwrap() {s} else {panic!()};
     write!(f, "<{}>", s).unwrap();
     write!(f, " <{}>", v).unwrap();
     write!(f, " \"{}\"", lex).unwrap();
-    if lang != "" {
-        writeln!(f, "@{} .", s).unwrap();
-    } else if dt != "" {
-        writeln!(f, "^^<{}> .", dt).unwrap();
+    if let Some(lang) = lang_opt {
+        writeln!(f, "@{} .", lang).unwrap();
     } else {
         writeln!(f, " .").unwrap();
     }
 }
 
 //Assumes that the data has been bulk-converted
-fn write_non_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) {
-    let mut obj_struct = if let AnyValue::Struct(s, _) = any_values.pop().unwrap() {s} else {panic!()};
-    let dt = if let AnyValue::Utf8(lang) = obj_struct.pop().unwrap() {lang} else {panic!()};
-    let lex = if let AnyValue::Utf8(lang) = obj_struct.pop().unwrap() {lang} else {panic!()};
+fn write_non_string_property_triple(f: &mut Vec<u8>, dt:&str, mut any_values: Vec<AnyValue>) {
+    println!("Anyvalues {:?}", any_values);
+
+    let lex = if let AnyValue::Utf8(lex) = any_values.pop().unwrap() {lex} else {panic!()};
     let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {v} else {panic!()};
     let s = if let AnyValue::Utf8(s) = any_values.pop().unwrap() {s} else {panic!()};
     write!(f, "<{}>", s).unwrap();

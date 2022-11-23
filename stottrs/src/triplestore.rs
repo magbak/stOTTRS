@@ -19,7 +19,7 @@ pub struct Triplestore {
     df_map: HashMap<String, HashMap<RDFNodeType, Vec<DataFrame>>>
 }
 
-
+#[derive(PartialEq)]
 enum TripleType {
     ObjectProperty,
     StringProperty,
@@ -44,7 +44,7 @@ impl Triplestore {
         }
     }
 
-    pub fn add_triples(&mut self, mut df:DataFrame, object_type: RDFNodeType, language_tag:Option<String>) {
+    pub fn add_triples(&mut self, df:DataFrame, object_type: RDFNodeType, language_tag:Option<String>) {
         if df.height() == 0 {
             return;
         }
@@ -66,13 +66,21 @@ impl Triplestore {
 
     fn add_triples_df(&mut self, mut df:DataFrame, predicate:String, object_type:RDFNodeType, language_tag:Option<String>) {
         df = df.drop_nulls(None).unwrap();
+        if df.height() == 0 {
+            return;
+        }
         df = df.lazy().unique(None, UniqueKeepStrategy::First).collect().unwrap();
-        if let Some(tag) = language_tag {
-            let lt_ser = Series::new_empty(LANGUAGE_TAG_COLUMN, &DataType::Utf8).extend_constant(AnyValue::Utf8(&tag), df.height()).unwrap();
-            df.with_column(lt_ser).unwrap();
-        } else {
-            let lt_ser = Series::full_null(LANGUAGE_TAG_COLUMN, df.height(), &DataType::Utf8);
-            df.with_column(lt_ser).unwrap();
+
+        if let RDFNodeType::Literal(lit) = &object_type {
+            if lit.as_ref() == xsd::STRING {
+                if let Some(tag) = language_tag {
+                    let lt_ser = Series::new_empty(LANGUAGE_TAG_COLUMN, &DataType::Utf8).extend_constant(AnyValue::Utf8(&tag), df.height()).unwrap();
+                    df.with_column(lt_ser).unwrap();
+                } else {
+                    let lt_ser = Series::full_null(LANGUAGE_TAG_COLUMN, df.height(), &DataType::Utf8);
+                    df.with_column(lt_ser).unwrap();
+                }
+            }
         }
         //TODO: add polars datatype harmonization here.
 

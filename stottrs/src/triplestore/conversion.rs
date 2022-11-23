@@ -1,6 +1,4 @@
 use chrono::{Datelike, Timelike};
-use oxrdf::NamedNode;
-use oxrdf::vocab::xsd;
 use crate::chrono::TimeZone as ChronoTimeZone;
 use polars_core::datatypes::{DataType, TimeZone};
 use polars_core::series::{IntoSeries, Series};
