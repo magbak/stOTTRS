@@ -2,6 +2,7 @@ use oxrdf::{BlankNode, NamedNode};
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use oxrdf::vocab::xsd;
+#[cfg(test)]
 use crate::constants::OTTR_TRIPLE;
 
 #[derive(PartialEq, Debug, Clone)]
