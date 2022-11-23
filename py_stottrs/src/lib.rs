@@ -16,6 +16,7 @@ use pyo3::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs::File;
+use oxrdf::NamedNode;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -155,13 +156,6 @@ pub struct Mapping {
     inner: InnerMapping,
 }
 
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct ResolveIRI {
-    key_column: String,
-    template: String,
-    argument: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
@@ -229,7 +223,7 @@ impl Mapping {
         let fk_cols = if let Some(fk_cols) = foreign_key_columns {
             fk_cols
         } else {
-            vec![];
+            vec![]
         };
 
         let tmpl = self.inner.expand_default(
@@ -244,7 +238,7 @@ impl Mapping {
         return Ok(format!("{}", tmpl))
     }
 
-    pub fn to_triples(&self) -> PyResult<Vec<Triple>> {
+    pub fn to_triples(&mut self) -> PyResult<Vec<Triple>> {
         let mut triples = vec![];
 
         fn create_subject(s: &str) -> TripleSubject {
@@ -279,7 +273,7 @@ impl Mapping {
                 }
             }
         }
-        fn create_literal(lex: &str, ltag_opt: Option<&str>, dt: &str) -> Literal {
+        fn create_literal(lex: &str, ltag_opt: Option<&str>, dt: Option<&str>) -> Literal {
             Literal {
                 lexical_form: lex.to_string(),
                 language_tag: if let Some(ltag) = ltag_opt {
@@ -287,13 +281,13 @@ impl Mapping {
                 } else {
                     None
                 },
-                datatype_iri: if let Some(_) = ltag_opt {
-                    None
-                } else {
+                datatype_iri: if let Some(dt) = dt {
                     Some(IRI {
                         iri: dt.to_string(),
                     })
-                },
+                } else {
+                    None
+                }
             }
         }
 
@@ -307,16 +301,15 @@ impl Mapping {
                 object,
             }
         }
-        fn to_python_literal_triple(
+        fn to_python_string_literal_triple(
             s: &str,
             v: &str,
             lex: &str,
             ltag_opt: Option<&str>,
-            dt: &str,
         ) -> Triple {
             let subject = create_subject(s);
             let verb = IRI { iri: v.to_string() };
-            let literal = create_literal(lex, ltag_opt, dt);
+            let literal = create_literal(lex, ltag_opt, None);
             let object = TripleObject {
                 iri: None,
                 blank_node: None,
@@ -328,10 +321,36 @@ impl Mapping {
                 object,
             }
         }
-        self.inner
+
+        fn to_python_nonstring_literal_triple(
+            s: &str,
+            v: &str,
+            lex: &str,
+            dt: &NamedNode,
+        ) -> Triple {
+            let subject = create_subject(s);
+            let verb = IRI { iri: v.to_string() };
+            let literal = create_literal(lex, None, Some(dt.as_str()));
+            let object = TripleObject {
+                iri: None,
+                blank_node: None,
+                literal: Some(literal),
+            };
+            Triple {
+                subject,
+                verb,
+                object,
+            }
+        }
+
+        self.inner.triplestore.deduplicate();
+        self.inner.triplestore
             .object_property_triples(to_python_object_triple, &mut triples);
-        self.inner
-            .data_property_triples(to_python_literal_triple, &mut triples);
+        self.inner.triplestore
+            .string_data_property_triples(to_python_string_literal_triple, &mut triples);
+        self.inner.triplestore.nonstring_data_property_triples(
+            to_python_nonstring_literal_triple, &mut triples
+        );
         Ok(triples)
     }
 

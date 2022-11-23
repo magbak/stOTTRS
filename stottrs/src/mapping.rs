@@ -21,7 +21,7 @@ use crate::triplestore::Triplestore;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
-    triplestore: Triplestore
+    pub triplestore: Triplestore
 }
 
 pub struct ExpandOptions {

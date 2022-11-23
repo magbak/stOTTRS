@@ -30,7 +30,7 @@ impl Triplestore {
         Triplestore { df_map: HashMap::new() }
     }
 
-    fn deduplicate(&mut self) {
+    pub fn deduplicate(&mut self) {
         for (_,map) in &mut self.df_map {
             for (_,v) in map {
                 if v.len() > 0 {
