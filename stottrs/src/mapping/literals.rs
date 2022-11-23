@@ -1,12 +1,11 @@
 use std::str::FromStr;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use oxrdf::{Literal, NamedNode};
+use oxrdf::{NamedNode};
 use oxrdf::vocab::xsd;
-use polars::prelude::LiteralValue;
 use polars_core::datatypes::TimeUnit;
 use polars_core::prelude::AnyValue;
 
-//This code is copied from Chrontext
+//This code is copied from Chrontext, which has identical licensing
 pub(crate) fn sparql_literal_to_any_value<'a>(value: &'a String, datatype: &Option<NamedNode>) -> (AnyValue<'a>, NamedNode) {
     if let Some(nn) = datatype {
         let datatype = nn.as_ref();

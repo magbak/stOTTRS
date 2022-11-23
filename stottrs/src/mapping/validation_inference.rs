@@ -8,7 +8,6 @@ use polars_core::export::rayon::prelude::ParallelIterator;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType};
 use std::collections::{HashMap, HashSet};
-use nom::Parser;
 use polars::export::rayon::iter::IntoParallelRefIterator;
 use polars_core::datatypes::BooleanChunked;
 
@@ -90,7 +89,7 @@ fn validate_infer_column_data_type(
 
 fn infer_rdf_node_type(ptype: &PType) -> RDFNodeType {
     match ptype {
-        PType::BasicType(b) => {
+        PType::BasicType(b, _) => {
             if b.as_str() == xsd::ANY_URI {
                 RDFNodeType::IRI
             } else {
@@ -159,7 +158,7 @@ fn validate_datatype(
         }
     };
     match target_ptype {
-        PType::BasicType(bt) => {
+        PType::BasicType(bt, _) => {
             if let DataType::List(_) = datatype {
                 mismatch_error()
             } else {
@@ -206,5 +205,5 @@ pub fn polars_datatype_to_xsd_datatype(datatype: &DataType) -> PType {
             panic!("Unsupported datatype:{}", datatype)
         }
     };
-    PType::BasicType(xsd_nn_ref.into_owned())
+    PType::BasicType(xsd_nn_ref.into_owned(), "".to_string())
 }

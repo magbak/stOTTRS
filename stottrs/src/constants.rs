@@ -11,4 +11,5 @@ pub const XSD_DATETIME_WITHOUT_TZ_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
 pub const XSD_DATETIME_WITH_TZ_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f%:z";
 pub const BLANK_NODE_IRI: &str = "BLANK_NODE_IRI";
 pub const NONE_IRI: &str = "NONE_IRI";
-pub const DEFAULT_PREFIX: &str = "https://github.com/magbak/stOTTRs#";
+pub const DEFAULT_PREDICATE_URI_PREFIX: &str = "https://github.com/magbak/stOTTRs/Predicates#";
+pub const DEFAULT_TEMPLATE_PREFIX: &str = "default:";

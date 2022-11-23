@@ -5,11 +5,10 @@ pub(crate) mod conversion;
 use std::collections::HashMap;
 use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
-use polars::prelude::{col, concat, IntoLazy, LazyFrame, lit, LiteralValue};
-use polars::prelude::Expr::Literal;
+use polars::prelude::{concat, IntoLazy, LazyFrame};
 use polars_core::datatypes::AnyValue;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{ChunkApply, DataType};
+use polars_core::prelude::{DataType};
 use polars_core::series::Series;
 use crate::mapping::RDFNodeType;
 

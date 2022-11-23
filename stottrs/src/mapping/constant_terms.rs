@@ -2,7 +2,7 @@ use std::ops::Deref;
 use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
 use polars::prelude::{concat_lst, Expr, LiteralValue, SpecialEq};
-use polars_core::datatypes::{AnyValue, DataType};
+use polars_core::datatypes::{DataType};
 use polars_core::prelude::{IntoSeries, Series};
 use crate::ast::{ConstantLiteral, ConstantTerm, PType};
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI};
@@ -18,13 +18,13 @@ pub fn constant_to_expr(
         ConstantTerm::Constant(c) => match c {
             ConstantLiteral::IRI(iri) => (
                 Expr::Literal(LiteralValue::Utf8(iri.as_str().to_string())),
-                PType::BasicType(xsd::ANY_URI.into_owned()),
+                PType::BasicType(xsd::ANY_URI.into_owned(), "xsd:anyURI".to_string()),
                 RDFNodeType::IRI,
                 None,
             ),
             ConstantLiteral::BlankNode(bn) => (
                 Expr::Literal(LiteralValue::Utf8(bn.as_str().to_string())),
-                PType::BasicType(NamedNode::new_unchecked(BLANK_NODE_IRI)),
+                PType::BasicType(NamedNode::new_unchecked(BLANK_NODE_IRI), BLANK_NODE_IRI.to_string()),
                 RDFNodeType::BlankNode,
                 None
             ),
@@ -40,14 +40,14 @@ pub fn constant_to_expr(
                 };
                 (
                     Expr::Literal(LiteralValue::Series(SpecialEq::new(value_series))),
-                    PType::BasicType(lit.data_type_iri.as_ref().unwrap().clone()),
+                    PType::BasicType(lit.data_type_iri.as_ref().unwrap().clone(), lit.data_type_iri.as_ref().unwrap().to_string()),
                     RDFNodeType::Literal(dt),
                     language_tag
                 )
             }
             ConstantLiteral::None => (
                 Expr::Literal(LiteralValue::Null),
-                PType::BasicType(NamedNode::new_unchecked(NONE_IRI)),
+                PType::BasicType(NamedNode::new_unchecked(NONE_IRI), NONE_IRI.to_string()),
                 RDFNodeType::None,
                 None
             ),
@@ -76,7 +76,6 @@ pub fn constant_to_expr(
             let out_ptype = PType::ListType(Box::new(last_ptype.unwrap()));
             let out_rdf_node_type = last_rdf_node_type.as_ref().unwrap().clone();
 
-            //Workaround for ArrowError(NotYetImplemented("Cannot cast to struct from other types"))
             if let RDFNodeType::Literal(lit) = last_rdf_node_type.as_ref().unwrap(){
                 let mut all_series = vec![];
                 for ex in &expressions {

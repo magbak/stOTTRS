@@ -212,6 +212,38 @@ impl Mapping {
         Ok(None)
     }
 
+    pub fn expand_default(
+        &mut self,
+        df: &PyAny,
+        primary_key_column: String,
+        foreign_key_columns: Option<Vec<String>>,
+        template_prefix: Option<String>,
+        predicate_uri_prefix: Option<String>,
+        language_tags: Option<HashMap<String, String>>,
+    ) -> PyResult<String> {
+        let df = polars_df_to_rust_df(&df)?;
+        let options = ExpandOptions {
+            language_tags
+        };
+
+        let fk_cols = if let Some(fk_cols) = foreign_key_columns {
+            fk_cols
+        } else {
+            vec![];
+        };
+
+        let tmpl = self.inner.expand_default(
+            df,
+            primary_key_column,
+            fk_cols,
+            template_prefix,
+            predicate_uri_prefix,
+            options.to_rust_expand_options()
+        ).map_err(MapperError::from)
+            .map_err(PyMapperError::from)?;
+        return Ok(format!("{}", tmpl))
+    }
+
     pub fn to_triples(&self) -> PyResult<Vec<Triple>> {
         let mut triples = vec![];
 

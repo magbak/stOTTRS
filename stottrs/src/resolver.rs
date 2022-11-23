@@ -127,12 +127,26 @@ fn resolve_signature(
     } else {
         annotation_list = None;
     }
+    let prefixed_name = get_name(&unresolved_signature.template_name);
+
 
     Ok(Signature {
         template_name: resolve(&unresolved_signature.template_name, prefix_map)?,
+        template_prefixed_name: prefixed_name,
         parameter_list,
         annotation_list,
     })
+}
+
+fn get_name(resolves_to_name: &ResolvesToNamedNode) -> String {
+    match &resolves_to_name {
+        ResolvesToNamedNode::PrefixedName(pname) => {
+            format!("{}:{}", pname.prefix , pname.name)
+        }
+        ResolvesToNamedNode::NamedNode(nn) => {
+            nn.to_string()
+        }
+    }
 }
 
 fn resolve_annotation(
@@ -272,7 +286,7 @@ fn resolve_ptype(
     prefix_map: &mut HashMap<String, NamedNode>,
 ) -> Result<PType, ResolutionError> {
     Ok(match unresolved_ptype {
-        UnresolvedPType::BasicType(b) => PType::BasicType(resolve(b, prefix_map)?),
+        UnresolvedPType::BasicType(b) => PType::BasicType(resolve(b, prefix_map)?, get_name(b)),
         UnresolvedPType::LUBType(l) => PType::LUBType(Box::new(resolve_ptype(l, prefix_map)?)),
         UnresolvedPType::ListType(l) => PType::ListType(Box::new(resolve_ptype(l, prefix_map)?)),
         UnresolvedPType::NEListType(l) => {

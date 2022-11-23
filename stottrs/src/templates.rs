@@ -98,7 +98,7 @@ impl TemplateDataset {
         let ottr_triple_subject = Parameter {
             optional: false,
             non_blank: false,
-            ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned())),
+            ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned(), "xsd:anyURI".to_string())),
             stottr_variable: StottrVariable {
                 name: "subject".to_string(),
             },
@@ -107,7 +107,7 @@ impl TemplateDataset {
         let ottr_triple_verb = Parameter {
             optional: false,
             non_blank: false,
-            ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned())),
+            ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned(), "xsd:anyURI".to_string())),
             stottr_variable: StottrVariable {
                 name: "verb".to_string(),
             },
@@ -126,6 +126,7 @@ impl TemplateDataset {
         let ottr_template = Template {
             signature: Signature {
                 template_name: NamedNode::new_unchecked(OTTR_TRIPLE),
+                template_prefixed_name: "ottr:Triple".to_string(),
                 parameter_list: vec![ottr_triple_subject, ottr_triple_verb, ottr_triple_object],
                 annotation_list: None,
             },

@@ -48,6 +48,7 @@ impl Triplestore {
         writer: &mut W,
         chunk_size: usize,
     ) -> Result<()> {
+        self.deduplicate();
         let n_threads = POOL.current_num_threads();
         let mut any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
         let mut write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
