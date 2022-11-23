@@ -29,7 +29,7 @@ impl Mapping {
         let columns: Vec<String> = df.get_column_names().iter().map(|x| x.to_string()).collect();
         for c in &columns {
             let dt = df.column(&c).unwrap().dtype().clone();
-
+            let has_null = df.column(c).unwrap().is_null().any();
             if c == &pk_col {
                 if let DataType::List(..) = dt {
                     todo!()
@@ -47,7 +47,7 @@ impl Mapping {
                 }
 
                 params.push(Parameter {
-                    optional: false,
+                    optional: has_null,
                     non_blank: false,
                     ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned(), "xsd:anyURI".to_string())),
                     stottr_variable: StottrVariable {
@@ -55,9 +55,7 @@ impl Mapping {
                     },
                     default_value: None,
                 })
-            }
-
-            if fk_cols.contains(&c) {
+            } else if fk_cols.contains(&c) {
                 if let DataType::List(..) = dt {
                     todo!()
                 }
@@ -75,7 +73,7 @@ impl Mapping {
                 }
 
                 params.push(Parameter {
-                    optional: false,
+                    optional: has_null,
                     non_blank: false,
                     ptype: Some(PType::BasicType(xsd::ANY_URI.into_owned(), "xsd:anyURI".to_string())),
                     stottr_variable: StottrVariable {
@@ -85,7 +83,7 @@ impl Mapping {
                 })
             } else {
                 params.push(Parameter {
-                    optional: false,
+                    optional: has_null,
                     non_blank: false,
                     ptype: None,
                     stottr_variable: StottrVariable {
@@ -101,7 +99,7 @@ impl Mapping {
             if c != pk_col && !fk_cols.contains(&c) {
                 patterns.push(Instance {
                     list_expander: None,
-                    template_name: OTTR_TRIPLE.parse().unwrap(),
+                    template_name: NamedNode::new(OTTR_TRIPLE).unwrap(),
                     argument_list: vec![
                         Argument {
                             list_expand: false,

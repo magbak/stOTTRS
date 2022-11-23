@@ -173,11 +173,13 @@ impl ExpandOptions {
 #[pymethods]
 impl Mapping {
     #[new]
-    pub fn new(documents: Vec<&str>) -> PyResult<Mapping> {
+    pub fn new(documents: Option<Vec<&str>>) -> PyResult<Mapping> {
         let mut parsed_documents = vec![];
-        for ds in documents {
-            let parsed_doc = document_from_str(ds).map_err(PyMapperError::from)?;
-            parsed_documents.push(parsed_doc);
+        if let Some(documents) = documents {
+            for ds in documents {
+                let parsed_doc = document_from_str(ds).map_err(PyMapperError::from)?;
+                parsed_documents.push(parsed_doc);
+            }
         }
         let template_dataset = TemplateDataset::new(parsed_documents)
             .map_err(MapperError::from)

@@ -108,7 +108,7 @@ fn validate_non_optional_parameter(df: &DataFrame, column_name: &str) -> Result<
         let is_null = df.column(column_name).unwrap().is_null();
         Err(MappingError::NonOptionalColumnHasNull(
             column_name.to_string(),
-            df.column("Key").unwrap().filter(&is_null).unwrap(),
+            df.filter(&is_null).unwrap(),
         ))
     } else {
         Ok(())
