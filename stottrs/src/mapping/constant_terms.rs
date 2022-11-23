@@ -7,6 +7,7 @@ use polars_core::prelude::{IntoSeries, Series};
 use crate::ast::{ConstantLiteral, ConstantTerm, PType};
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI};
 use crate::mapping::errors::MappingError;
+use crate::mapping::literals::sparql_literal_to_any_value;
 use crate::mapping::RDFNodeType;
 
 pub fn constant_to_expr(
@@ -28,8 +29,9 @@ pub fn constant_to_expr(
                 None
             ),
             ConstantLiteral::Literal(lit) => {
-                let value_series = Series::new_empty("lexical_form", &DataType::Utf8)
-                    .extend_constant(AnyValue::Utf8(lit.value.as_str()), 1)
+                let (any, dt) = sparql_literal_to_any_value(&lit.value, &lit.data_type_iri);
+                let value_series = Series::new_empty("literal", &DataType::Utf8)
+                    .extend_constant(any, 1)
                     .unwrap();
                 let language_tag= if let Some(tag) = &lit.language {
                     Some(tag.clone())
@@ -39,7 +41,7 @@ pub fn constant_to_expr(
                 (
                     Expr::Literal(LiteralValue::Series(SpecialEq::new(value_series))),
                     PType::BasicType(lit.data_type_iri.as_ref().unwrap().clone()),
-                    RDFNodeType::Literal(xsd::STRING.into_owned()),
+                    RDFNodeType::Literal(dt),
                     language_tag
                 )
             }

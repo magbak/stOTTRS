@@ -2,6 +2,7 @@ mod constant_terms;
 pub mod default;
 pub mod errors;
 mod validation_inference;
+mod literals;
 
 use crate::ast::{Instance, ListExpanderType, Signature, StottrTerm, Template};
 use crate::constants::OTTR_TRIPLE;
