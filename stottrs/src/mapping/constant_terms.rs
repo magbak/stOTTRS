@@ -2,7 +2,7 @@ use std::ops::Deref;
 use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
 use polars::prelude::{concat_lst, Expr, LiteralValue, SpecialEq};
-use polars_core::datatypes::{AnyValue, DataType};
+use polars_core::datatypes::{DataType};
 use polars_core::prelude::{IntoSeries, Series};
 use crate::ast::{ConstantLiteral, ConstantTerm, PType};
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI};

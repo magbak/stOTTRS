@@ -82,11 +82,11 @@ impl Triplestore {
         }
     }
 
-    pub fn export_oxrdf_triples(&self) -> Vec<Triple> {
+    pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {
+        self.deduplicate();
         fn subject_from_str(s: &str) -> Subject {
             Subject::NamedNode(NamedNode::new_unchecked(s))
         }
-
         fn object_term_from_str(s: &str) -> Term {
             Term::NamedNode(NamedNode::new_unchecked(s))
         }

@@ -92,7 +92,7 @@ impl Mapping {
         Ok(())
     }
 
-    pub fn export_oxrdf_triples(&self) -> Vec<Triple> {
+    pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {
         self.triplestore.export_oxrdf_triples()
     }
 

@@ -1,8 +1,7 @@
 use std::str::FromStr;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use oxrdf::{Literal, NamedNode};
+use oxrdf::{NamedNode};
 use oxrdf::vocab::xsd;
-use polars::prelude::LiteralValue;
 use polars_core::datatypes::TimeUnit;
 use polars_core::prelude::AnyValue;
 
