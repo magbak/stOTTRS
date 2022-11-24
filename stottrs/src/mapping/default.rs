@@ -1,7 +1,5 @@
 use super::Mapping;
-use crate::ast::{
-    Argument, ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm, StottrVariable, Template,
-};
+use crate::ast::{Argument, ConstantLiteral, ConstantTerm, Instance, PType, Parameter, Signature, StottrTerm, StottrVariable, Template, ListExpanderType};
 use crate::constants::{DEFAULT_PREDICATE_URI_PREFIX, DEFAULT_TEMPLATE_PREFIX, OTTR_TRIPLE};
 use crate::mapping::errors::MappingError;
 use log::warn;
@@ -97,8 +95,14 @@ impl Mapping {
         let mut patterns = vec![];
         for c in columns {
             if c != pk_col && !fk_cols.contains(&c) {
+                let list_expander = if let DataType::List(..) = df.column(&c).unwrap().dtype() {
+                    Some(ListExpanderType::Cross)
+                } else {
+                    None
+                };
+
                 patterns.push(Instance {
-                    list_expander: None,
+                    list_expander: list_expander.clone(),
                     template_name: NamedNode::new(OTTR_TRIPLE).unwrap(),
                     prefixed_template_name: "ottr:Triple".to_string(),
                     argument_list: vec![
@@ -117,7 +121,7 @@ impl Mapping {
                             )),
                         },
                         Argument {
-                            list_expand: false,
+                            list_expand: list_expander.is_some(),
                             term: StottrTerm::Variable(StottrVariable { name: c.clone() }),
                         },
                     ],

@@ -812,12 +812,12 @@ fn test_default() {
         "http://example.net/ns#obj2",
     ]);
     subject.rename("subject");
-    let mut my_list1 = Series::from_iter([Some(1i32), Some(2), None]);
-    my_list1.rename("myVar1");
-    let mut my_list2 = Series::from_iter([5i32, 6, 7]);
-    my_list2.rename("myVar2");
-    let series = [subject, my_list1, my_list2];
-    let mut df = DataFrame::from_iter(series);
+    let mut my_var1 = Series::from_iter([Some(1i32), Some(2), None]);
+    my_var1.rename("myVar1");
+    let mut my_var2 = Series::from_iter([5i32, 6, 7]);
+    my_var2.rename("myVar2");
+    let series = [subject, my_var1, my_var2];
+    let df = DataFrame::from_iter(series);
 
     //println!("{df}");
     let _report = mapping
@@ -866,6 +866,82 @@ fn test_default() {
         },Triple {
             subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj2")),
             predicate: NamedNode::new_unchecked("https://github.com/magbak/stOTTRs/Predicates#myVar2"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "7",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+    ]);
+    assert_eq!(expected_triples_set, actual_triples_set);
+}
+
+#[rstest]
+#[serial]
+fn test_default_list() {
+    let mut mapping = Mapping::from_str("").unwrap();
+    let mut subject = Series::from_iter([
+        "http://example.net/ns#obj1",
+        "http://example.net/ns#obj1",
+        "http://example.net/ns#obj2",
+    ]);
+    subject.rename("subject");
+    let mut my_list1 = Series::from_iter([Some(1i32), Some(2), None]);
+    my_list1.rename("myList1");
+    let mut my_list2 = Series::from_iter([5i32, 6, 7]);
+    my_list2.rename("myList2");
+    let series = [subject, my_list1, my_list2];
+    let mut df = DataFrame::from_iter(series);
+    df = df.lazy()
+        .groupby_stable([col("subject")])
+        .agg([col("myList1").drop_nulls().list(), col("myList2").list()]).collect()
+        .unwrap();
+    //println!("{df}");
+    let _report = mapping
+        .expand_default(
+            df,
+            "subject".to_string(),
+            vec![],
+            None, None, Default::default()
+        )
+        .unwrap();
+    let triples = mapping.export_oxrdf_triples();
+    //println!("{:?}", triples);
+    let actual_triples_set: HashSet<Triple> = HashSet::from_iter(triples.into_iter());
+    let expected_triples_set = HashSet::from([
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj1")),
+            predicate: NamedNode::new_unchecked("https://github.com/magbak/stOTTRs/Predicates#myList1"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "1",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj1")),
+            predicate: NamedNode::new_unchecked("https://github.com/magbak/stOTTRs/Predicates#myList1"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "2",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj1")),
+            predicate: NamedNode::new_unchecked("https://github.com/magbak/stOTTRs/Predicates#myList2"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "5",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        },
+        Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj1")),
+            predicate: NamedNode::new_unchecked("https://github.com/magbak/stOTTRs/Predicates#myList2"),
+            object: Term::Literal(Literal::new_typed_literal(
+                "6",
+                NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
+            )),
+        }, Triple {
+            subject: Subject::NamedNode(NamedNode::new_unchecked("http://example.net/ns#obj2")),
+            predicate: NamedNode::new_unchecked("https://github.com/magbak/stOTTRs/Predicates#myList2"),
             object: Term::Literal(Literal::new_typed_literal(
                 "7",
                 NamedNode::new_unchecked("http://www.w3.org/2001/XMLSchema#int"),
