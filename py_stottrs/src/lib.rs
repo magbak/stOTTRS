@@ -16,6 +16,7 @@ use pyo3::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs::File;
+use oxrdf::NamedNode;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -155,13 +156,6 @@ pub struct Mapping {
     inner: InnerMapping,
 }
 
-#[pyclass]
-#[derive(Debug, Clone)]
-pub struct ResolveIRI {
-    key_column: String,
-    template: String,
-    argument: String,
-}
 
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
@@ -179,11 +173,13 @@ impl ExpandOptions {
 #[pymethods]
 impl Mapping {
     #[new]
-    pub fn new(documents: Vec<&str>) -> PyResult<Mapping> {
+    pub fn new(documents: Option<Vec<&str>>) -> PyResult<Mapping> {
         let mut parsed_documents = vec![];
-        for ds in documents {
-            let parsed_doc = document_from_str(ds).map_err(PyMapperError::from)?;
-            parsed_documents.push(parsed_doc);
+        if let Some(documents) = documents {
+            for ds in documents {
+                let parsed_doc = document_from_str(ds).map_err(PyMapperError::from)?;
+                parsed_documents.push(parsed_doc);
+            }
         }
         let template_dataset = TemplateDataset::new(parsed_documents)
             .map_err(MapperError::from)
@@ -212,7 +208,39 @@ impl Mapping {
         Ok(None)
     }
 
-    pub fn to_triples(&self) -> PyResult<Vec<Triple>> {
+    pub fn expand_default(
+        &mut self,
+        df: &PyAny,
+        primary_key_column: String,
+        foreign_key_columns: Option<Vec<String>>,
+        template_prefix: Option<String>,
+        predicate_uri_prefix: Option<String>,
+        language_tags: Option<HashMap<String, String>>,
+    ) -> PyResult<String> {
+        let df = polars_df_to_rust_df(&df)?;
+        let options = ExpandOptions {
+            language_tags
+        };
+
+        let fk_cols = if let Some(fk_cols) = foreign_key_columns {
+            fk_cols
+        } else {
+            vec![]
+        };
+
+        let tmpl = self.inner.expand_default(
+            df,
+            primary_key_column,
+            fk_cols,
+            template_prefix,
+            predicate_uri_prefix,
+            options.to_rust_expand_options()
+        ).map_err(MapperError::from)
+            .map_err(PyMapperError::from)?;
+        return Ok(format!("{}", tmpl))
+    }
+
+    pub fn to_triples(&mut self) -> PyResult<Vec<Triple>> {
         let mut triples = vec![];
 
         fn create_subject(s: &str) -> TripleSubject {
@@ -247,7 +275,7 @@ impl Mapping {
                 }
             }
         }
-        fn create_literal(lex: &str, ltag_opt: Option<&str>, dt: &str) -> Literal {
+        fn create_literal(lex: &str, ltag_opt: Option<&str>, dt: Option<&str>) -> Literal {
             Literal {
                 lexical_form: lex.to_string(),
                 language_tag: if let Some(ltag) = ltag_opt {
@@ -255,13 +283,13 @@ impl Mapping {
                 } else {
                     None
                 },
-                datatype_iri: if let Some(_) = ltag_opt {
-                    None
-                } else {
+                datatype_iri: if let Some(dt) = dt {
                     Some(IRI {
                         iri: dt.to_string(),
                     })
-                },
+                } else {
+                    None
+                }
             }
         }
 
@@ -275,16 +303,15 @@ impl Mapping {
                 object,
             }
         }
-        fn to_python_literal_triple(
+        fn to_python_string_literal_triple(
             s: &str,
             v: &str,
             lex: &str,
             ltag_opt: Option<&str>,
-            dt: &str,
         ) -> Triple {
             let subject = create_subject(s);
             let verb = IRI { iri: v.to_string() };
-            let literal = create_literal(lex, ltag_opt, dt);
+            let literal = create_literal(lex, ltag_opt, None);
             let object = TripleObject {
                 iri: None,
                 blank_node: None,
@@ -296,10 +323,36 @@ impl Mapping {
                 object,
             }
         }
-        self.inner
+
+        fn to_python_nonstring_literal_triple(
+            s: &str,
+            v: &str,
+            lex: &str,
+            dt: &NamedNode,
+        ) -> Triple {
+            let subject = create_subject(s);
+            let verb = IRI { iri: v.to_string() };
+            let literal = create_literal(lex, None, Some(dt.as_str()));
+            let object = TripleObject {
+                iri: None,
+                blank_node: None,
+                literal: Some(literal),
+            };
+            Triple {
+                subject,
+                verb,
+                object,
+            }
+        }
+
+        self.inner.triplestore.deduplicate();
+        self.inner.triplestore
             .object_property_triples(to_python_object_triple, &mut triples);
-        self.inner
-            .data_property_triples(to_python_literal_triple, &mut triples);
+        self.inner.triplestore
+            .string_data_property_triples(to_python_string_literal_triple, &mut triples);
+        self.inner.triplestore.nonstring_data_property_triples(
+            to_python_nonstring_literal_triple, &mut triples
+        );
         Ok(triples)
     }
 

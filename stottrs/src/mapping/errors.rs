@@ -13,7 +13,7 @@ pub enum MappingError {
     MissingForeignKeyColumn(String, String),
     KeyColumnContainsDuplicates(Series),
     KeyAndPathColumnOverlapsExisting(DataFrame),
-    NonOptionalColumnHasNull(String, Series),
+    NonOptionalColumnHasNull(String, DataFrame),
     InvalidKeyColumnDataType(DataType),
     NonBlankColumnHasBlankNode(String, Series),
     MissingParameterColumn(String),

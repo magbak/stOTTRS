@@ -204,5 +204,5 @@ pub fn polars_datatype_to_xsd_datatype(datatype: &DataType) -> PType {
             panic!("Unsupported datatype:{}", datatype)
         }
     };
-    PType::BasicType(xsd_nn_ref.into_owned())
+    PType::BasicType(xsd_nn_ref.into_owned(), "".to_string())
 }
