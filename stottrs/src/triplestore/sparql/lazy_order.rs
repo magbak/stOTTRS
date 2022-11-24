@@ -1,31 +1,33 @@
-use crate::triplestore::sparql::lazy_expressions::lazy_expression;
-use crate::triplestore::sparql::query_context::{Context, PathEntry};
-use polars::prelude::{LazyFrame};
 use spargebra::algebra::OrderExpression;
-use std::collections::HashSet;
+use crate::triplestore::sparql::errors::SparqlError;
+use crate::triplestore::sparql::query_context::{Context, PathEntry};
+use crate::triplestore::sparql::solution_mapping::SolutionMappings;
+use super::Triplestore;
 
-pub fn lazy_order_expression(
-    oexpr: &OrderExpression,
-    lazy_frame: LazyFrame,
-    columns: &HashSet<String>,
-    context: &Context,
-) -> (LazyFrame, bool, Context) {
-    match oexpr {
-        OrderExpression::Asc(expr) => {
-            let inner_context = context.extension_with(PathEntry::OrderingOperation);
-            (
-                lazy_expression(expr, lazy_frame, columns,  &inner_context),
-                true,
-                inner_context,
-            )
-        }
-        OrderExpression::Desc(expr) => {
-            let inner_context = context.extension_with(PathEntry::OrderingOperation);
-            (
-                lazy_expression(expr, lazy_frame, columns,  &inner_context),
-                false,
-                inner_context,
-            )
+impl Triplestore {
+    pub fn lazy_order_expression(
+        &mut self,
+        oexpr: &OrderExpression,
+        solution_mappings: SolutionMappings,
+        context: &Context,
+    ) -> Result<(SolutionMappings, bool, Context), SparqlError> {
+        match oexpr {
+            OrderExpression::Asc(expr) => {
+                let inner_context = context.extension_with(PathEntry::OrderingOperation);
+                Ok((
+                    self.lazy_expression(expr, solution_mappings, &inner_context)?,
+                    true,
+                    inner_context,
+                ))
+            }
+            OrderExpression::Desc(expr) => {
+                let inner_context = context.extension_with(PathEntry::OrderingOperation);
+                Ok((
+                    self.lazy_expression(expr, solution_mappings, &inner_context)?,
+                    false,
+                    inner_context,
+                ))
+            }
         }
     }
 }

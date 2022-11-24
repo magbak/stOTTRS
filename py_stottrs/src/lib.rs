@@ -17,6 +17,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs::File;
 use oxrdf::NamedNode;
+use crate::error::PyMapperError::MapperError;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -238,6 +239,10 @@ impl Mapping {
         ).map_err(MapperError::from)
             .map_err(PyMapperError::from)?;
         return Ok(format!("{}", tmpl))
+    }
+
+    pub fn query(&self, query:String) -> PyResult<PyObject> {
+        let df = self.inner.triplestore.query(&query).map_err(PyMapperError::from)
     }
 
     pub fn to_triples(&mut self) -> PyResult<Vec<Triple>> {

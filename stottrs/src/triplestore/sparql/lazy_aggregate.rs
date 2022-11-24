@@ -1,139 +1,160 @@
-use crate::triplestore::sparql::lazy_expressions::lazy_expression;
+use super::Triplestore;
 use crate::triplestore::sparql::query_context::{Context, PathEntry};
+use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 use oxrdf::Variable;
-use polars::prelude::{col, DataType, Expr, GetOutput, IntoSeries, LazyFrame};
+use polars::prelude::{col, DataType, Expr, GetOutput, IntoSeries};
 use spargebra::algebra::AggregateExpression;
-use std::collections::HashSet;
+use crate::triplestore::sparql::errors::SparqlError;
 
-pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
-    variable: &Variable,
-    aggregate_expression: &AggregateExpression,
-    all_proper_column_names: &Vec<String>,
-    columns: &HashSet<String>,
-    lf: LazyFrame,
-    context: &Context,
-) -> (LazyFrame, Expr, Option<Context>) {
-    let out_lf;
-    let mut out_expr;
-    let column_context;
-    match aggregate_expression {
-        AggregateExpression::Count { expr, distinct } => {
-            if let Some(some_expr) = expr {
+impl Triplestore {
+    pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
+        &mut self,
+        variable: &Variable,
+        aggregate_expression: &AggregateExpression,
+        solution_mappings: SolutionMappings,
+        context: &Context,
+    ) -> Result<(SolutionMappings, Expr, Option<Context>), SparqlError> {
+        let output_solution_mappings;
+        let mut out_expr;
+        let column_context;
+        match aggregate_expression {
+            AggregateExpression::Count { expr, distinct } => {
+                if let Some(some_expr) = expr {
+                    column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+                    output_solution_mappings = self
+                        .lazy_expression(
+                            some_expr,
+                            solution_mappings,
+                            column_context.as_ref().unwrap(),
+                        )
+                        ?;
+                    if *distinct {
+                        out_expr = col(column_context.as_ref().unwrap().as_str()).n_unique();
+                    } else {
+                        out_expr = col(column_context.as_ref().unwrap().as_str()).count();
+                    }
+                } else {
+                    output_solution_mappings = solution_mappings;
+                    column_context = None;
+                    let all_proper_column_names: Vec<String> = output_solution_mappings
+                        .columns
+                        .iter()
+                        .map(|x| x.clone())
+                        .collect();
+                    let columns_expr = Expr::Columns(all_proper_column_names);
+                    if *distinct {
+                        out_expr = columns_expr.n_unique();
+                    } else {
+                        out_expr = columns_expr.unique();
+                    }
+                }
+            }
+            AggregateExpression::Sum { expr, distinct } => {
                 column_context = Some(context.extension_with(PathEntry::AggregationOperation));
-                out_lf = lazy_expression(some_expr, lf, columns, column_context.as_ref().unwrap());
-                if *distinct {
-                    out_expr = col(column_context.as_ref().unwrap().as_str()).n_unique();
-                } else {
-                    out_expr = col(column_context.as_ref().unwrap().as_str()).count();
-                }
-            } else {
-                out_lf = lf;
-                column_context = None;
 
-                let columns_expr = Expr::Columns(all_proper_column_names.clone());
+                output_solution_mappings = self
+                    .lazy_expression(expr, solution_mappings, column_context.as_ref().unwrap())
+                    ?;
+
                 if *distinct {
-                    out_expr = columns_expr.n_unique();
+                    out_expr = col(column_context.as_ref().unwrap().as_str())
+                        .unique()
+                        .sum();
                 } else {
-                    out_expr = columns_expr.unique();
+                    out_expr = col(column_context.as_ref().unwrap().as_str()).sum();
                 }
             }
-        }
-        AggregateExpression::Sum { expr, distinct } => {
-            column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+            AggregateExpression::Avg { expr, distinct } => {
+                column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+                output_solution_mappings = self
+                    .lazy_expression(expr, solution_mappings, column_context.as_ref().unwrap())
+                    ?;
 
-            out_lf = lazy_expression(expr, lf, columns, column_context.as_ref().unwrap());
+                if *distinct {
+                    out_expr = col(column_context.as_ref().unwrap().as_str())
+                        .unique()
+                        .mean();
+                } else {
+                    out_expr = col(column_context.as_ref().unwrap().as_str()).mean();
+                }
+            }
+            AggregateExpression::Min { expr, distinct: _ } => {
+                column_context = Some(context.extension_with(PathEntry::AggregationOperation));
 
-            if *distinct {
-                out_expr = col(column_context.as_ref().unwrap().as_str())
-                    .unique()
-                    .sum();
-            } else {
-                out_expr = col(column_context.as_ref().unwrap().as_str()).sum();
+                output_solution_mappings = self
+                    .lazy_expression(expr, solution_mappings, column_context.as_ref().unwrap())
+                    ?;
+
+                out_expr = col(column_context.as_ref().unwrap().as_str()).min();
+            }
+            AggregateExpression::Max { expr, distinct: _ } => {
+                column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+
+                output_solution_mappings = self
+                    .lazy_expression(expr, solution_mappings, column_context.as_ref().unwrap())
+                    ?;
+
+                out_expr = col(column_context.as_ref().unwrap().as_str()).max();
+            }
+            AggregateExpression::GroupConcat {
+                expr,
+                distinct,
+                separator,
+            } => {
+                column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+
+                output_solution_mappings = self
+                    .lazy_expression(expr, solution_mappings, column_context.as_ref().unwrap())
+                    ?;
+
+                let use_sep = if let Some(sep) = separator {
+                    sep.to_string()
+                } else {
+                    "".to_string()
+                };
+                if *distinct {
+                    out_expr = col(column_context.as_ref().unwrap().as_str())
+                        .cast(DataType::Utf8)
+                        .list()
+                        .apply(
+                            move |s| {
+                                Ok(s.unique_stable()
+                                    .expect("Unique stable error")
+                                    .str_concat(use_sep.as_str())
+                                    .into_series())
+                            },
+                            GetOutput::from_type(DataType::Utf8),
+                        )
+                        .first();
+                } else {
+                    out_expr = col(column_context.as_ref().unwrap().as_str())
+                        .cast(DataType::Utf8)
+                        .list()
+                        .apply(
+                            move |s| Ok(s.str_concat(use_sep.as_str()).into_series()),
+                            GetOutput::from_type(DataType::Utf8),
+                        )
+                        .first();
+                }
+            }
+            AggregateExpression::Sample { expr, .. } => {
+                column_context = Some(context.extension_with(PathEntry::AggregationOperation));
+
+                output_solution_mappings = self
+                    .lazy_expression(expr, solution_mappings, column_context.as_ref().unwrap())
+                    ?;
+
+                out_expr = col(column_context.as_ref().unwrap().as_str()).first();
+            }
+            AggregateExpression::Custom {
+                name,
+                expr:_,
+                distinct: _,
+            } => {
+                panic!("Custom aggregation {} not supported", name);
             }
         }
-        AggregateExpression::Avg { expr, distinct } => {
-            column_context = Some(context.extension_with(PathEntry::AggregationOperation));
-            out_lf = lazy_expression(expr, lf, columns, column_context.as_ref().unwrap());
-
-            if *distinct {
-                out_expr = col(column_context.as_ref().unwrap().as_str())
-                    .unique()
-                    .mean();
-            } else {
-                out_expr = col(column_context.as_ref().unwrap().as_str()).mean();
-            }
-        }
-        AggregateExpression::Min { expr, distinct: _ } => {
-            column_context = Some(context.extension_with(PathEntry::AggregationOperation));
-
-            out_lf = lazy_expression(expr, lf, columns, column_context.as_ref().unwrap());
-
-            out_expr = col(column_context.as_ref().unwrap().as_str()).min();
-        }
-        AggregateExpression::Max { expr, distinct: _ } => {
-            column_context = Some(context.extension_with(PathEntry::AggregationOperation));
-
-            out_lf = lazy_expression(expr, lf, columns, column_context.as_ref().unwrap());
-
-            out_expr = col(column_context.as_ref().unwrap().as_str()).max();
-        }
-        AggregateExpression::GroupConcat {
-            expr,
-            distinct,
-            separator,
-        } => {
-            column_context = Some(context.extension_with(PathEntry::AggregationOperation));
-
-            out_lf = lazy_expression(expr, lf, columns, column_context.as_ref().unwrap());
-
-            let use_sep = if let Some(sep) = separator {
-                sep.to_string()
-            } else {
-                "".to_string()
-            };
-            if *distinct {
-                out_expr = col(column_context.as_ref().unwrap().as_str())
-                    .cast(DataType::Utf8)
-                    .list()
-                    .apply(
-                        move |s| {
-                            Ok(s.unique_stable()
-                                .expect("Unique stable error")
-                                .str_concat(use_sep.as_str())
-                                .into_series())
-                        },
-                        GetOutput::from_type(DataType::Utf8),
-                    )
-                    .first();
-            } else {
-                out_expr = col(column_context.as_ref().unwrap().as_str())
-                    .cast(DataType::Utf8)
-                    .list()
-                    .apply(
-                        move |s| Ok(s.str_concat(use_sep.as_str()).into_series()),
-                        GetOutput::from_type(DataType::Utf8),
-                    )
-                    .first();
-            }
-        }
-        AggregateExpression::Sample { expr, .. } => {
-            column_context = Some(context.extension_with(PathEntry::AggregationOperation));
-
-            out_lf = lazy_expression(expr, lf, columns, column_context.as_ref().unwrap());
-
-            out_expr = col(column_context.as_ref().unwrap().as_str()).first();
-        }
-        AggregateExpression::Custom {
-            name,
-            expr,
-            distinct: _,
-        } => {
-            let iri = name.as_str();
-
-                panic!("Custom aggregation not supported")
-
-        }
+        out_expr = out_expr.alias(variable.as_str());
+        Ok((output_solution_mappings, out_expr, column_context))
     }
-    out_expr = out_expr.alias(variable.as_str());
-    (out_lf, out_expr, column_context)
 }

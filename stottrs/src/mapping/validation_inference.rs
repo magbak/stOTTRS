@@ -88,7 +88,7 @@ fn validate_infer_column_data_type(
 
 fn infer_rdf_node_type(ptype: &PType) -> RDFNodeType {
     match ptype {
-        PType::BasicType(b) => {
+        PType::BasicType(b, _) => {
             if b.as_str() == xsd::ANY_URI {
                 RDFNodeType::IRI
             } else {
@@ -107,7 +107,7 @@ fn validate_non_optional_parameter(df: &DataFrame, column_name: &str) -> Result<
         let is_null = df.column(column_name).unwrap().is_null();
         Err(MappingError::NonOptionalColumnHasNull(
             column_name.to_string(),
-            df.column("Key").unwrap().filter(&is_null).unwrap(),
+            df.filter(&is_null).unwrap(),
         ))
     } else {
         Ok(())
@@ -157,7 +157,7 @@ fn validate_datatype(
         }
     };
     match target_ptype {
-        PType::BasicType(bt) => {
+        PType::BasicType(bt, _) => {
             if let DataType::List(_) = datatype {
                 mismatch_error()
             } else {
