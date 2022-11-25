@@ -21,3 +21,4 @@ pub mod errors;
 pub mod mapping;
 pub mod templates;
 pub mod triplestore;
+pub(crate) mod literals;

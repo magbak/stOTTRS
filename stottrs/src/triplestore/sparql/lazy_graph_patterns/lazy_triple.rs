@@ -1,5 +1,5 @@
 use crate::triplestore::sparql::query_context::Context;
-use polars::prelude::{col, Expr, lit, LiteralValue};
+use polars::prelude::{col, Expr, lit};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use std::collections::{HashMap, HashSet};
 use log::warn;

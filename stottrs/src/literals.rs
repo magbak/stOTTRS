@@ -6,11 +6,11 @@ use polars_core::datatypes::TimeUnit;
 use polars_core::prelude::AnyValue;
 
 //This code is copied from Chrontext, which has identical licensing
-pub(crate) fn sparql_literal_to_any_value<'a>(value: &'a String, datatype: &Option<NamedNode>) -> (AnyValue<'a>, NamedNode) {
-    if let Some(nn) = datatype {
+pub(crate) fn sparql_literal_to_any_value(value: &String, datatype: &Option<NamedNode>) -> (AnyValue<'static>, NamedNode) {
+    let (anyv, dt ) = if let Some(nn) = datatype {
         let datatype = nn.as_ref();
         let literal_value = if datatype == xsd::STRING {
-            AnyValue::Utf8(value)
+            AnyValue::Utf8Owned(value.into())
         } else if datatype == xsd::UNSIGNED_INT {
             let u = u32::from_str(value).expect("Integer parsing error");
             AnyValue::from(u)
@@ -55,6 +55,7 @@ pub(crate) fn sparql_literal_to_any_value<'a>(value: &'a String, datatype: &Opti
         };
         (literal_value, nn.clone())
     } else {
-        (AnyValue::Utf8(value), xsd::STRING.into_owned())
-    }
+        (AnyValue::Utf8Owned(value.into()), xsd::STRING.into_owned())
+    };
+    return (anyv.into_static().unwrap(), dt)
 }
