@@ -8,7 +8,8 @@ mod minus;
 mod order_by;
 mod project;
 mod union;
-mod lazy_triple;
+mod triple;
+mod path;
 
 use super::Triplestore;
 use log::debug;
@@ -35,7 +36,7 @@ impl Triplestore {
                 }
                 Ok(updated_solution_mappings.unwrap())
             },
-            GraphPattern::Path { .. } => {todo!("Not implemented yet!")},
+            GraphPattern::Path { subject, path, object } => {todo!("Not implemented yet!")},
             GraphPattern::Join { left, right } => {
                 self.lazy_join(
                     left,
