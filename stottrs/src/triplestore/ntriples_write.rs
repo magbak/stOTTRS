@@ -196,12 +196,19 @@ fn write_non_string_property_triple(f: &mut Vec<u8>, dt:&str, mut any_values: Ve
     let lex = if let AnyValue::Utf8(lex) = any_values.pop().unwrap() {lex} else {panic!()};
     let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {v} else {panic!()};
     let s = if let AnyValue::Utf8(s) = any_values.pop().unwrap() {s} else {panic!()};
+    write!(f, "<{}>", s).unwrap();
+    write!(f, " <{}>", v).unwrap();
+    write!(f, " \"{}\"", lex).unwrap();
+    writeln!(f, "^^<{}> .", dt).unwrap();
 }
 
 fn write_object_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) {
     let o = if let AnyValue::Utf8(o) = any_values.pop().unwrap() {o} else {panic!()};
     let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {v} else {panic!()};
     let s = if let AnyValue::Utf8(s) = any_values.pop().unwrap() {s} else {panic!()};
+    write!(f, "<{}>", s).unwrap();
+    write!(f, " <{}>", v).unwrap();
+    writeln!(f, " <{}> .", o).unwrap();
 }
 
 pub type Result<T> = std::result::Result<T, PolarsError>;
