@@ -8,7 +8,7 @@ use crate::triplestore::sparql::errors::SparqlError;
 
 impl Triplestore {
     pub fn sparql_aggregate_expression_as_lazy_column_and_expression(
-        &mut self,
+        &self,
         variable: &Variable,
         aggregate_expression: &AggregateExpression,
         solution_mappings: SolutionMappings,

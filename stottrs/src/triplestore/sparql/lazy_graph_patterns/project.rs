@@ -10,7 +10,7 @@ use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_project(
-        &mut self,
+        &self,
         inner: &GraphPattern,
         variables: &Vec<Variable>,
         solution_mappings: Option<SolutionMappings>,

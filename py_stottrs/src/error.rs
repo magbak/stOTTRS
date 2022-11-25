@@ -22,6 +22,7 @@
 // SOFTWARE.
 
 use stottrs::errors::MapperError;
+use stottrs::triplestore::sparql::errors::SparqlError;
 use polars_core::error::{ArrowError, PolarsError};
 use pyo3::{
     create_exception,
@@ -41,6 +42,8 @@ pub enum PyMapperError {
     Arrow(#[from] ArrowError),
     #[error(transparent)]
     IOError(std::io::Error),
+    #[error(transparent)]
+    SparqlError(#[from] SparqlError)
 }
 
 impl std::convert::From<PyMapperError> for PyErr {

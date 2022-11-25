@@ -1,7 +1,7 @@
 mod ntriples_write;
 mod export_triples;
 pub(crate) mod conversion;
-mod sparql;
+pub mod sparql;
 
 use std::collections::HashMap;
 use oxrdf::NamedNode;
@@ -16,6 +16,7 @@ use crate::mapping::RDFNodeType;
 const LANGUAGE_TAG_COLUMN:&str = "language_tag";
 
 pub struct Triplestore {
+    deduplicated: bool,
     df_map: HashMap<String, HashMap<RDFNodeType, Vec<DataFrame>>>
 }
 
@@ -28,7 +29,7 @@ enum TripleType {
 
 impl Triplestore {
     pub fn new() -> Triplestore {
-        Triplestore { df_map: HashMap::new() }
+        Triplestore { df_map: HashMap::new(), deduplicated:true }
     }
 
     pub fn deduplicate(&mut self) {
@@ -42,6 +43,7 @@ impl Triplestore {
                 }
             }
         }
+        self.deduplicated = true;
     }
 
     pub fn add_triples(&mut self, df:DataFrame, object_type: RDFNodeType, language_tag:Option<String>) {
@@ -86,8 +88,11 @@ impl Triplestore {
 
         if let Some(m) = self.df_map.get_mut(&predicate) {
             if let Some(v) = m.get_mut(&object_type) {
+                self.deduplicated = false;
                 v.push(df);
             } else {
+                //Unique here to avoid duplication
+                df = df.unique(None, UniqueKeepStrategy::First).unwrap();
                 m.insert(object_type, vec![df]);
             }
         } else {

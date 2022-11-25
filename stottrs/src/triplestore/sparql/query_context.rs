@@ -1,5 +1,3 @@
-use oxrdf::Variable;
-use spargebra::algebra::{AggregateExpression, Expression};
 use std::cmp::min;
 use std::fmt;
 use std::fmt::Formatter;
@@ -463,69 +461,5 @@ impl Context {
         string_rep += entry_rep.as_str();
         path.push(p);
         Context { path, string_rep }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct VariableInContext {
-    pub variable: Variable,
-    pub(crate) context: Context,
-}
-
-impl VariableInContext {
-    pub fn same_name(&self, v: &Variable) -> bool {
-        self.variable.as_str() == v.as_str()
-    }
-
-    pub fn in_scope(&self, context: &Context, partial_scope: bool) -> bool {
-        self.context.in_scope(context, partial_scope)
-    }
-
-    pub fn equivalent(&self, variable: &Variable, context: &Context) -> bool {
-        let ret = self.same_name(variable) && self.in_scope(context, false);
-        ret
-    }
-
-    pub fn partial(&self, variable: &Variable, context: &Context) -> bool {
-        self.same_name(variable) && self.in_scope(context, true)
-    }
-}
-
-impl VariableInContext {
-    pub fn new(variable: Variable, context: Context) -> VariableInContext {
-        VariableInContext { variable, context }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct ExpressionInContext {
-    pub expression: Expression,
-    pub context: Context,
-}
-
-impl ExpressionInContext {
-    pub fn new(expression: Expression, context: Context) -> ExpressionInContext {
-        ExpressionInContext {
-            expression,
-            context,
-        }
-    }
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct AggregateExpressionInContext {
-    pub aggregate_expression: AggregateExpression,
-    pub context: Context,
-}
-
-impl AggregateExpressionInContext {
-    pub fn new(
-        aggregate_expression: AggregateExpression,
-        context: Context,
-    ) -> AggregateExpressionInContext {
-        AggregateExpressionInContext {
-            aggregate_expression,
-            context,
-        }
     }
 }

@@ -8,7 +8,7 @@ use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_order_by(
-        &mut self,
+        &self,
         inner: &GraphPattern,
         expression: &Vec<OrderExpression>,
         solution_mappings: Option<SolutionMappings>,

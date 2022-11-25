@@ -8,6 +8,7 @@ use polars_core::datatypes::DataType;
 use polars_core::prelude::JoinType;
 use polars::prelude::IntoLazy;
 use polars_core::frame::DataFrame;
+use polars_core::toggle_string_cache;
 use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
@@ -33,7 +34,7 @@ impl Triplestore {
                         let (dt, dfs) = m.iter().next().unwrap();
                         assert_eq!(dfs.len(), 1, "Should be deduplicated");
                         let df = dfs.get(0).unwrap();
-                        let mut lf = df.clone().lazy();
+                        let mut lf = df.clone().lazy().select([col("subject"), col("object")]);
                         let mut var_cols = vec![];
                         let mut str_cols = vec![];
                         match &triple_pattern.subject {
@@ -58,7 +59,7 @@ impl Triplestore {
                                 lf = lf.filter(col("object").eq(Expr::Literal(sparql_literal_to_polars_literal_value(lit)))).drop_columns(["object"])
                             }
                             TermPattern::Variable(var) => {
-                                lf = lf.rename(["subject"], [var.as_str()]);
+                                lf = lf.rename(["object"], [var.as_str()]);
                                 var_cols.push(var.as_str().to_string());
                                 match dt {
                                     RDFNodeType::IRI => {
@@ -76,17 +77,7 @@ impl Triplestore {
                             _ => {todo!("No support for {}", &triple_pattern.object)}
                         }
                         if let Some(mut mappings) = solution_mappings {
-                            for c in &var_cols {
-                                mappings.columns.insert(c.to_string());
-                            }
-                            if let TermPattern::Variable(v) = &triple_pattern.subject {
-                                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
-                            }
-                            if let TermPattern::Variable(v) = &triple_pattern.object {
-                                mappings.datatypes.insert(v.clone(), dt.clone());
-                            }
-
-                            let mut join_cols:Vec<String> = var_cols.clone().into_iter().filter(|x| mappings.columns.contains(x)).collect();
+                            let join_cols:Vec<String> = var_cols.clone().into_iter().filter(|x| mappings.columns.contains(x)).collect();
 
                             for s in str_cols {
                                 if join_cols.contains(&s) {
@@ -102,6 +93,17 @@ impl Triplestore {
                             } else {
                                 mappings.mappings = mappings.mappings.join(lf, join_on.as_slice(), join_on.as_slice(), JoinType::Inner);
                             }
+                            //Update mapping columns
+                            for c in &var_cols {
+                                mappings.columns.insert(c.to_string());
+                            }
+                            if let TermPattern::Variable(v) = &triple_pattern.subject {
+                                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
+                            }
+                            if let TermPattern::Variable(v) = &triple_pattern.object {
+                                mappings.datatypes.insert(v.clone(), dt.clone());
+                            }
+
                             return Ok(mappings)
                         } else {
                             let mut datatypes = HashMap::new();
@@ -111,7 +113,7 @@ impl Triplestore {
                             if let TermPattern::Variable(v) = &triple_pattern.object {
                                 datatypes.insert(v.clone(), dt.clone());
                             }
-
+                            toggle_string_cache(true);
                             return Ok(SolutionMappings {
                                 mappings: lf,
                                 columns: var_cols.into_iter().map(|x|x.to_string()).collect(),

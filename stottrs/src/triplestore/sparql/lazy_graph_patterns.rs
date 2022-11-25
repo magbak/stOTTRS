@@ -14,12 +14,12 @@ use super::Triplestore;
 use log::debug;
 use spargebra::algebra::GraphPattern;
 use crate::triplestore::sparql::errors::SparqlError;
-use crate::triplestore::sparql::query_context::Context;
+use crate::triplestore::sparql::query_context::{Context, PathEntry};
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_graph_pattern(
-        &mut self,
+        &self,
         graph_pattern: &GraphPattern,
         solution_mappings: Option<SolutionMappings>,
         context: &Context,
@@ -27,8 +27,15 @@ impl Triplestore {
         debug!("Processing graph pattern at context: {}", context.as_str());
 
         match graph_pattern {
-            GraphPattern::Bgp { .. } => Ok(solution_mappings.unwrap()),
-            GraphPattern::Path { .. } => Ok(solution_mappings.unwrap()),
+            GraphPattern::Bgp { patterns } => {
+                let mut updated_solution_mappings = solution_mappings;
+                let bgp_context = context.extension_with(PathEntry::BGP);
+                for tp in patterns {
+                    updated_solution_mappings = Some(self.lazy_triple_pattern(updated_solution_mappings, tp, &bgp_context)?)
+                }
+                Ok(updated_solution_mappings.unwrap())
+            },
+            GraphPattern::Path { .. } => {todo!("Not implemented yet!")},
             GraphPattern::Join { left, right } => {
                 self.lazy_join(
                     left,

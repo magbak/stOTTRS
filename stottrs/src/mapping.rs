@@ -163,6 +163,7 @@ impl Mapping {
                         lf.clone(),
                         &columns,
                     )?;
+
                     self._expand(
                         i.template_name.as_str(),
                         instance_lf,
@@ -222,22 +223,16 @@ fn create_remapped_lazy_frame(
                 expressions.push(expr.alias(&target.stottr_variable.name));
                 new_map.insert(target.stottr_variable.name.clone(), mapped_column);
             }
-            StottrTerm::List(_) => {}
+            StottrTerm::List(_) => {todo!()}
         }
-    }
-    let mut drop = vec![];
-    for c in columns.keys() {
-        if !existing.contains(c) {
-            drop.push(c);
-        }
-    }
-    if drop.len() > 0 {
-        lf = lf.drop_columns(drop.as_slice());
     }
 
-    lf = lf.rename(existing.as_slice(), new.as_slice());
+    // TODO: Remove workaround likely bug in Pola.rs 0.25.1
+    lf = lf.rename(existing.as_slice(), new.as_slice()).collect().unwrap().lazy();
+
     let new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
     lf = lf.select(new_column_expressions.as_slice());
+
     for e in expressions {
         lf = lf.with_column(e);
     }

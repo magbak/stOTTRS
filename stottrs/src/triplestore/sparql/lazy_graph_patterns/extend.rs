@@ -8,7 +8,7 @@ use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_extend(
-        &mut self,
+        &self,
         inner: &GraphPattern,
         variable: &Variable,
         expression: &Expression,
@@ -22,11 +22,9 @@ impl Triplestore {
         let mut output_solution_mappings =
             self.lazy_graph_pattern(inner, input_solution_mappings, &inner_context)?;
 
-        if !output_solution_mappings.columns.contains(variable.as_str()) {
-            output_solution_mappings = self.lazy_expression(expression, output_solution_mappings, &expression_context)?;
-            output_solution_mappings.mappings = output_solution_mappings.mappings.rename([expression_context.as_str()], &[variable.as_str()]);
-            output_solution_mappings.columns.insert(variable.as_str().to_string());
-        }
+        output_solution_mappings = self.lazy_expression(expression, output_solution_mappings, &expression_context)?;
+        output_solution_mappings.mappings = output_solution_mappings.mappings.rename([expression_context.as_str()], &[variable.as_str()]);
+        output_solution_mappings.columns.insert(variable.as_str().to_string());
         Ok(output_solution_mappings)
     }
 }

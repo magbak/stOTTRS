@@ -17,7 +17,7 @@ use crate::triplestore::sparql::sparql_to_polars::{sparql_literal_to_polars_lite
 
 impl Triplestore {
     pub fn lazy_expression(
-        &mut self,
+        &self,
         expr: &Expression,
         mut solution_mappings: SolutionMappings,
         context: &Context,

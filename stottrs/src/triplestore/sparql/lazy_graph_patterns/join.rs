@@ -7,7 +7,7 @@ use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_join(
-        &mut self,
+        &self,
         left: &GraphPattern,
         right: &GraphPattern,
         solution_mappings: Option<SolutionMappings>,

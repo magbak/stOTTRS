@@ -8,7 +8,7 @@ use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_distinct(
-        &mut self,
+        &self,
         inner: &GraphPattern,
         solution_mappings: Option<SolutionMappings>,
         context: &Context,

@@ -9,7 +9,7 @@ use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 
 impl Triplestore {
     pub(crate) fn lazy_group(
-        &mut self,
+        &self,
         inner: &GraphPattern,
         variables: &Vec<Variable>,
         aggregates: &Vec<(Variable, AggregateExpression)>,
