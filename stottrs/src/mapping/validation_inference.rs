@@ -8,7 +8,6 @@ use polars_core::export::rayon::prelude::ParallelIterator;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType};
 use std::collections::{HashMap, HashSet};
-use polars::export::rayon::iter::IntoParallelRefIterator;
 use polars_core::datatypes::BooleanChunked;
 
 impl Mapping {

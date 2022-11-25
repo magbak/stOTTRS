@@ -193,8 +193,6 @@ fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) 
 
 //Assumes that the data has been bulk-converted
 fn write_non_string_property_triple(f: &mut Vec<u8>, dt:&str, mut any_values: Vec<AnyValue>) {
-    println!("Anyvalues {:?}", any_values);
-
     let lex = if let AnyValue::Utf8(lex) = any_values.pop().unwrap() {lex} else {panic!()};
     let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {v} else {panic!()};
     let s = if let AnyValue::Utf8(s) = any_values.pop().unwrap() {s} else {panic!()};

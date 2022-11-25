@@ -87,7 +87,6 @@ impl Triplestore {
         fn subject_from_str(s: &str) -> Subject {
             Subject::NamedNode(NamedNode::new_unchecked(s))
         }
-
         fn object_term_from_str(s: &str) -> Term {
             Term::NamedNode(NamedNode::new_unchecked(s))
         }
