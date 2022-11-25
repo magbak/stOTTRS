@@ -1,5 +1,5 @@
 use crate::triplestore::sparql::query_context::Context;
-use polars::prelude::{col, Expr};
+use polars::prelude::{col, Expr, lit, LiteralValue};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use std::collections::{HashMap, HashSet};
 use log::warn;
@@ -8,6 +8,7 @@ use polars_core::datatypes::DataType;
 use polars_core::prelude::JoinType;
 use polars::prelude::IntoLazy;
 use polars_core::frame::DataFrame;
+use polars_core::series::Series;
 use polars_core::toggle_string_cache;
 use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
@@ -123,7 +124,48 @@ impl Triplestore {
                     }
                 } else {
                     warn!("Could not find triples for predicate {:?}", n);
-                    return Ok(SolutionMappings::new(DataFrame::empty().lazy(), HashSet::new(), HashMap::new()))
+                    let mut out_columns = HashSet::new();
+                    let mut out_datatypes = HashMap::new();
+                    if let TermPattern::Variable(v) = &triple_pattern.subject {
+                        out_columns.insert(v.as_str().to_string());
+                        out_datatypes.insert(v.clone(), RDFNodeType::None);
+                    }
+                    if let TermPattern::Variable(v) = &triple_pattern.object {
+                        out_columns.insert(v.as_str().to_string());
+                        out_datatypes.insert(v.clone(), RDFNodeType::None);
+                    }
+                    let mut variables:Vec<&String> = out_columns.iter().collect();
+                    variables.sort();
+                    if let Some(SolutionMappings{ mut mappings, mut columns, mut datatypes }) = solution_mappings {
+                        mappings = mappings.filter(lit(false));
+                        let overlap:Vec<&String> = columns.intersection(&out_columns).collect();
+                        if overlap.is_empty() {
+                            return Ok(SolutionMappings::new(mappings, columns, datatypes))
+                        }
+                        let mut series = vec![];
+                        for c in &variables {
+                            if !columns.contains(*c) {
+                                series.push(Series::new_empty(&c, &DataType::Null));
+                            }
+                        }
+                        let join_on:Vec<Expr> = overlap.into_iter().map(|x|col(x)).collect();
+                        let out_lf = DataFrame::new(series).unwrap().lazy();
+                        mappings = mappings.join(out_lf, join_on.as_slice(), join_on.as_slice(), JoinType::Cross);
+                        for (k,v) in out_datatypes {
+                            if !datatypes.contains_key(&k) {
+                                datatypes.insert(k,v);
+                            }
+                        }
+                        columns.extend(out_columns);
+                        Ok(SolutionMappings::new(mappings, columns, datatypes))
+                    } else {
+                        let mut series = vec![];
+                        for var in variables {
+                            series.push(Series::new_empty(var, &DataType::Null));
+                        }
+                        let out_lf = DataFrame::new(series).unwrap().lazy();
+                        Ok(SolutionMappings::new(out_lf, out_columns, out_datatypes))
+                    }
                 }
             }
             NamedNodePattern::Variable(..) => {

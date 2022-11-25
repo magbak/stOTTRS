@@ -66,9 +66,10 @@ impl Triplestore {
         }
         for (var, dt) in right_datatypes.drain() {
             if let Some(dt_left) = left_solution_mappings.datatypes.get(&var) {
-                if &dt != dt_left {
-                    return Err(SparqlError::InconsistentDatatypes(var.clone(), dt_left.clone(), dt, context.clone()))
-                }
+                //TODO: handle compatibility
+                // if &dt != dt_left {
+                //     return Err(SparqlError::InconsistentDatatypes(var.clone(), dt_left.clone(), dt, context.clone()))
+                // }
             } else {
                 left_solution_mappings.datatypes.insert(var,dt);
             }

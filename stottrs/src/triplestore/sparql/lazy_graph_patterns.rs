@@ -77,7 +77,7 @@ impl Triplestore {
                 )
 
             }
-            GraphPattern::Graph { name: _, inner: _ } => Ok(solution_mappings.unwrap()),
+            GraphPattern::Graph { name: _, inner: _ } => {todo!("Not supported")},
             GraphPattern::Extend {
                 inner,
                 variable,
@@ -104,7 +104,7 @@ impl Triplestore {
             GraphPattern::Values {
                 variables: _,
                 bindings: _,
-            } => Ok(solution_mappings.unwrap()),
+            } => {todo!("Values not supported yet")},
             GraphPattern::OrderBy { inner, expression } => {
                 self.lazy_order_by(
                     inner,

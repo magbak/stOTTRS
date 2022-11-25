@@ -29,7 +29,7 @@ impl Triplestore {
         let right_solution_mappings = self
             .lazy_graph_pattern(
                 right,
-                Some(left_solution_mappings.clone()),
+                solution_mappings,
                 &right_context,
             )
             ?;

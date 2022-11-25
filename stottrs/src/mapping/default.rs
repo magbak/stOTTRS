@@ -94,7 +94,7 @@ impl Mapping {
 
         let mut patterns = vec![];
         for c in columns {
-            if c != pk_col && !fk_cols.contains(&c) {
+            if c != pk_col {
                 let list_expander = if let DataType::List(..) = df.column(&c).unwrap().dtype() {
                     Some(ListExpanderType::Cross)
                 } else {
