@@ -16,6 +16,7 @@ use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::query_context::{Context, PathEntry};
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 use log::{debug, info};
+use polars_utils::IdxSize;
 use spargebra::algebra::GraphPattern;
 
 impl Triplestore {
@@ -87,9 +88,10 @@ impl Triplestore {
             }
             GraphPattern::Slice { inner, start, length } => {
                 let mut newsols = self.lazy_graph_pattern(inner, solution_mappings, &context.extension_with(PathEntry::ReducedInner))?;
-                newsols.mappings = newsols.mappings.limit(*start as u32);
                 if let Some(length) = length {
-                    newsols.mappings = newsols.mappings.limit(*length as u32);
+                    newsols.mappings = newsols.mappings.slice(*start as i64, *length as u32);
+                } else {
+                    newsols.mappings = newsols.mappings.slice(*start as i64, u32::MAX);
                 }
                 Ok(newsols)
             }
