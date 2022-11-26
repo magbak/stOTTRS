@@ -3,11 +3,11 @@ use oxrdf::NamedNode;
 use oxrdf::vocab::xsd;
 use polars::prelude::{concat_lst, Expr, LiteralValue, SpecialEq};
 use polars_core::datatypes::{DataType};
-use polars_core::prelude::{IntoSeries, Series};
+use polars_core::prelude::{AnyValue, IntoSeries, Series};
 use crate::ast::{ConstantLiteral, ConstantTerm, PType};
 use crate::constants::{BLANK_NODE_IRI, NONE_IRI};
 use crate::mapping::errors::MappingError;
-use crate::mapping::literals::sparql_literal_to_any_value;
+use crate::literals::sparql_literal_to_any_value;
 use crate::mapping::RDFNodeType;
 
 pub fn constant_to_expr(
@@ -29,10 +29,16 @@ pub fn constant_to_expr(
                 None
             ),
             ConstantLiteral::Literal(lit) => {
-                let (any, dt) = sparql_literal_to_any_value(&lit.value, &lit.data_type_iri);
-                let value_series = Series::new_empty("literal", &DataType::Utf8)
-                    .extend_constant(any, 1)
+                let (mut any, dt) = sparql_literal_to_any_value(&lit.value, &lit.data_type_iri);
+                let mut value_series = Series::new_empty("literal", &DataType::Utf8);
+                //Workaround for owned utf 8..
+                if let AnyValue::Utf8Owned(s) = any {
+                    any = AnyValue::Utf8(&s);
+                    value_series = value_series.extend_constant(any, 1)
                     .unwrap();
+                } else {
+                    value_series = value_series.extend_constant(any, 1).unwrap();
+                }
                 let language_tag= if let Some(tag) = &lit.language {
                     Some(tag.clone())
                 } else {
