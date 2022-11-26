@@ -59,7 +59,7 @@ impl Triplestore {
                 self.lazy_union(left, right, solution_mappings, context)
             }
             GraphPattern::Graph { name: _, inner: _ } => {
-                todo!("Not supported")
+                unimplemented!("Graphs not supported")
             }
             GraphPattern::Extend {
                 inner,
@@ -100,7 +100,7 @@ impl Triplestore {
                 variables,
                 aggregates,
             } => self.lazy_group(inner, variables, aggregates, solution_mappings, context),
-            GraphPattern::Service { .. } => Ok(solution_mappings.unwrap()),
+            GraphPattern::Service { .. } => {unimplemented!("Services are not implemented")},
         }
     }
 }
