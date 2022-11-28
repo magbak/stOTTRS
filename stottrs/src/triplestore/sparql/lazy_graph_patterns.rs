@@ -16,7 +16,6 @@ use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::query_context::{Context, PathEntry};
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
 use log::{debug, info};
-use polars_utils::IdxSize;
 use spargebra::algebra::GraphPattern;
 
 impl Triplestore {

@@ -16,8 +16,9 @@ use pyo3::*;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::fs::File;
-use arrow_python_utils::to_python::to_py_df;
+use arrow_python_utils::to_python::{df_to_py_df, df_vec_to_py_df_list};
 use oxrdf::NamedNode;
+use stottrs::triplestore::sparql::QueryResult;
 
 #[pyclass]
 #[derive(Debug, PartialEq, PartialOrd, Clone)]
@@ -242,17 +243,17 @@ impl Mapping {
     }
 
     pub fn query(&mut self, py: Python<'_>, query:String) -> PyResult<PyObject> {
-        let mut df = self.inner.triplestore.query(&query).map_err(PyMapperError::from)?;
-        let names_vec: Vec<String> = df
-                    .get_column_names()
-                    .into_iter()
-                    .map(|x| x.to_string())
-                    .collect();
-        let names: Vec<&str> = names_vec.iter().map(|x| x.as_str()).collect();
-        let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
-        let pyarrow = PyModule::import(py, "pyarrow")?;
-        let polars = PyModule::import(py, "polars")?;
-        to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)
+        let mut res = self.inner.triplestore.query(&query).map_err(PyMapperError::from)?;
+        match res {
+            QueryResult::Select(mut df) => {
+                df_to_py_df(df, py)
+            }
+            QueryResult::Construct(dfs) => {
+                let dfs = dfs.into_iter().map(|(df,_)|df).collect();
+                Ok(df_vec_to_py_df_list(dfs,py)?.into())
+            }
+        }
+
     }
 
     pub fn to_triples(&mut self) -> PyResult<Vec<Triple>> {

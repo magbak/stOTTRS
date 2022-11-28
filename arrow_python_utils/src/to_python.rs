@@ -22,7 +22,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use polars_core::frame::ArrowChunk;
+use polars_core::frame::{ArrowChunk, DataFrame};
 use polars_core::prelude::{ArrayRef, ArrowField};
 use polars_core::utils::arrow::ffi;
 use pyo3::ffi::Py_uintptr_t;
@@ -69,8 +69,7 @@ pub(crate) fn to_py_rb(
 
     Ok(record.to_object(py))
 }
-
-pub fn to_py_df(
+ fn to_py_df(
     rb: &ArrowChunk,
     names: &[&str],
     py: Python,
@@ -86,4 +85,26 @@ pub fn to_py_df(
     let py_table = py_table.to_object(py);
     let df = polars.call_method1("from_arrow", (py_table,))?;
     Ok(df.to_object(py))
+}
+
+pub fn df_to_py_df(mut df:DataFrame, py: Python) -> PyResult<PyObject> {
+    let names_vec: Vec<String> = df
+        .get_column_names()
+        .into_iter()
+        .map(|x| x.to_string())
+        .collect();
+    let names: Vec<&str> = names_vec.iter().map(|x| x.as_str()).collect();
+    let chunk = df.as_single_chunk().iter_chunks().next().unwrap();
+    let pyarrow = PyModule::import(py, "pyarrow")?;
+    let polars = PyModule::import(py, "polars")?;
+    to_py_df(&chunk, names.as_slice(), py, pyarrow, polars)
+}
+
+pub fn df_vec_to_py_df_list(mut dfs:Vec<DataFrame>, py: Python) -> PyResult<&PyList> {
+    let mut py_dfs = vec![];
+    for df in dfs {
+        py_dfs.push(df_to_py_df(df, py)?)
+    }
+
+    Ok(PyList::new(py,py_dfs))
 }
