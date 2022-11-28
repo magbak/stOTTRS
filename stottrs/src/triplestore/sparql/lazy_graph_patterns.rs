@@ -3,13 +3,14 @@ mod extend;
 mod filter;
 mod group;
 mod join;
-mod lazy_triple;
 mod left_join;
 mod minus;
 mod order_by;
 mod project;
 mod union;
 mod values;
+mod triple;
+mod path;
 
 use super::Triplestore;
 use crate::triplestore::sparql::errors::SparqlError;
@@ -39,10 +40,10 @@ impl Triplestore {
                     )?)
                 }
                 Ok(updated_solution_mappings.unwrap())
-            }
-            GraphPattern::Path { .. } => {
-                todo!("Not implemented yet!")
-            }
+            },
+            GraphPattern::Path { subject, path, object } => {
+                self.lazy_path(subject, path, object, solution_mappings, context)
+            },
             GraphPattern::Join { left, right } => {
                 self.lazy_join(left, right, solution_mappings, context)
             }

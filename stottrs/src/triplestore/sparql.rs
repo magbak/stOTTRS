@@ -20,6 +20,7 @@ use crate::triplestore::sparql::sparql_to_polars::sparql_named_node_to_polars_li
 use polars::frame::DataFrame;
 use polars::prelude::{col, IntoLazy};
 use polars_core::prelude::{DataType, Series};
+use polars_core::toggle_string_cache;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 
@@ -35,9 +36,10 @@ impl Triplestore {
         }
         let query = Query::parse(query, None).map_err(|x| SparqlError::ParseError(x))?;
         self.query_parsed(&query)
-        }
+    }
 
-    fn query_parsed(&self, query:&Query) -> Result<QueryResult, SparqlError> {
+    fn query_parsed(&self, query: &Query) -> Result<QueryResult, SparqlError> {
+        toggle_string_cache(true);
         let context = Context::new();
         match query {
             Query::Select {
@@ -86,14 +88,16 @@ impl Triplestore {
         }
     }
 
-    pub fn construct_update(&mut self, query:&str) -> Result<(), SparqlError> {
+    pub fn construct_update(&mut self, query: &str) -> Result<(), SparqlError> {
         let query = Query::parse(query, None).map_err(|x| SparqlError::ParseError(x))?;
         if let Query::Construct { .. } = &query {
             let res = self.query_parsed(&query)?;
             match res {
-                QueryResult::Select(_) => {panic!("Should never happen")}
+                QueryResult::Select(_) => {
+                    panic!("Should never happen")
+                }
                 QueryResult::Construct(dfs) => {
-                    for (df,dt) in dfs {
+                    for (df, dt) in dfs {
                         self.add_triples(df, dt, None);
                     }
                     Ok(())
@@ -176,19 +180,10 @@ fn named_node_pattern_series(
 }
 
 fn named_node_series(nn: &NamedNode, name: &str, len: usize) -> (Series, RDFNodeType) {
-    let anyvalue = sparql_named_node_to_polars_literal_value(nn)
-        .to_anyvalue()
-        .unwrap()
-        .into_static()
-        .unwrap();
-    let mut any_values = vec![];
-    for _ in 0..len {
-        any_values.push(anyvalue.clone())
-    }
-    (
-        Series::from_any_values(name, &any_values).unwrap(),
-        RDFNodeType::IRI,
-    )
+    let nn_vec = vec![nn.as_str()].repeat(len);
+    let mut ser = Series::from_iter(nn_vec);
+    ser.rename(name);
+    (ser, RDFNodeType::IRI)
 }
 
 fn variable_series(
