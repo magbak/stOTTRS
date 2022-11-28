@@ -3,6 +3,7 @@ import pytest
 import polars as pl
 from math import floor
 import pathlib
+import time
 
 pl.Config.set_fmt_str_lengths(300)
 
@@ -224,6 +225,47 @@ SELECT ?site_label ?wtur_label ?ts ?ts_label WHERE {
     by = ["site_label", "wtur_label", "ts", "ts_label"]
     df = windpower_mapping.query(query).sort(by)
     filename = TESTDATA_PATH / "larger_query.csv"
+    #df.write_csv(filename)
+    expected_df = pl.scan_csv(filename).sort(by).collect()
+    pl.testing.assert_frame_equal(df, expected_df)
+
+def test_simple_property_path_query(windpower_mapping):
+    query = """PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+PREFIX ct:<https://github.com/magbak/chrontext#>
+PREFIX wp:<https://github.com/magbak/chrontext/windpower_example#>
+PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rds:<https://github.com/magbak/chrontext/rds_power#>
+SELECT ?site_label ?node WHERE {
+    ?site a rds:Site .
+    ?site rdfs:label ?site_label .
+    ?site rds:hasFunctionalAspect / ^rds:hasFunctionalAspectNode ?node .
+}"""
+    by = ["site_label", "node"]
+    df = windpower_mapping.query(query).sort(by)
+    filename = TESTDATA_PATH / "simple_property_path_query.csv"
+    df.write_csv(filename)
+    #expected_df = pl.scan_csv(filename).sort(by).collect()
+    #pl.testing.assert_frame_equal(df, expected_df)
+
+def test_iterated_property_path_query(windpower_mapping):
+    query = """PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>
+PREFIX ct:<https://github.com/magbak/chrontext#>
+PREFIX wp:<https://github.com/magbak/chrontext/windpower_example#>
+PREFIX rdfs:<http://www.w3.org/2000/01/rdf-schema#>
+PREFIX rdf:<http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+PREFIX rds:<https://github.com/magbak/chrontext/rds_power#>
+SELECT ?site_label ?node WHERE {
+    ?site a rds:Site .
+    ?site rdfs:label ?site_label .
+    ?site (rds:hasFunctionalAspect / ^rds:hasFunctionalAspectNode)+ ?node .
+}"""
+    by = ["site_label", "node"]
+    start = time.time()
+    df = windpower_mapping.query(query).sort(by)
+    end = time.time()
+    print(f"Took {round(end-start, 3)}")
+    filename = TESTDATA_PATH / "iterated_property_path_query.csv"
     #df.write_csv(filename)
     expected_df = pl.scan_csv(filename).sort(by).collect()
     pl.testing.assert_frame_equal(df, expected_df)

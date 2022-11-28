@@ -12,6 +12,7 @@ use crate::triplestore::sparql::query_context::{Context};
 use polars::frame::DataFrame;
 use polars::prelude::{col, IntoLazy};
 use polars_core::prelude::DataType;
+use polars_core::toggle_string_cache;
 use spargebra::Query;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
@@ -34,6 +35,7 @@ impl Triplestore {
             base_iri: _,
         } = query
         {
+            toggle_string_cache(true);
             let SolutionMappings{ mappings, columns:_, datatypes:_ } = self.lazy_graph_pattern(&pattern, None, &context)?;
             let df = mappings.collect().unwrap();
             let mut cats = vec![];

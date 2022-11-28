@@ -70,9 +70,23 @@ impl Triplestore {
                                         if lit.as_ref() == xsd::STRING {
                                             str_cols.push(var.as_str().to_string());
                                         }
-
                                     }
-                                    _ => {panic!("No support for this datatype: {:?}", dt)}
+                                    _ => {panic!("No support for datatype {:?}", dt)}
+                                }
+                            }
+                            TermPattern::BlankNode(bn) => {
+                                lf = lf.rename(["object"], [bn.as_str()]);
+                                var_cols.push(bn.as_str().to_string());
+                                match dt {
+                                    RDFNodeType::IRI => {
+                                        str_cols.push(bn.as_str().to_string());
+                                    }
+                                    RDFNodeType::Literal(lit) => {
+                                        if lit.as_ref() == xsd::STRING {
+                                            str_cols.push(bn.as_str().to_string());
+                                        }
+                                    }
+                                    _ => {panic!("No support for datatype {:?}", dt)}
                                 }
                             }
                             _ => {todo!("No support for {}", &triple_pattern.object)}
@@ -114,7 +128,6 @@ impl Triplestore {
                             if let TermPattern::Variable(v) = &triple_pattern.object {
                                 datatypes.insert(v.clone(), dt.clone());
                             }
-                            toggle_string_cache(true);
                             return Ok(SolutionMappings {
                                 mappings: lf,
                                 columns: var_cols.into_iter().map(|x|x.to_string()).collect(),

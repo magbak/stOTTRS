@@ -1,22 +1,25 @@
 use super::Triplestore;
+use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::query_context::Context;
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
-use oxrdf::{NamedNode, Variable};
-use polars::prelude::{col, IntoLazy};
-use polars_core::datatypes::DataType;
-use polars_core::frame::DataFrame;
-use polars_core::prelude::{ChunkAgg, NamedFrom, UInt32Chunked};
+use crate::triplestore::sparql::sparql_to_polars::{
+    sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value,
+};
+use oxrdf::NamedNode;
+use polars::prelude::{col, Expr, IntoLazy};
+use polars_core::datatypes::{AnyValue, DataType};
+use polars_core::frame::{DataFrame, UniqueKeepStrategy};
+use polars_core::prelude::{ChunkAgg, JoinType};
+use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::concat_df;
 use spargebra::algebra::PropertyPathExpression;
-use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
-use sprs::{CsMat, CsMatBase, CsMatI, CsVecBase};
+use spargebra::term::TermPattern;
+use sprs::{CsMat, CsMatBase, TriMatBase};
 use std::cmp::max;
 use std::collections::hash_map::Values;
 use std::collections::HashMap;
-use std::ops::Add;
-use polars_core::series::Series;
-use polars_core::StrHashGlobal;
+use polars_core::with_string_cache;
 
 enum SubjectOrObject {
     Subject,
@@ -28,13 +31,13 @@ type SparseMatrix = CsMatBase<u32, usize, Vec<usize>, Vec<usize>, Vec<u32>, usiz
 struct SparsePathReturn {
     sparmat: SparseMatrix,
     soo: SubjectOrObject,
-    dt: DataType,
+    dt: RDFNodeType,
 }
 
 struct DFPathReturn {
     df: DataFrame,
     soo: SubjectOrObject,
-    dt: DataType,
+    dt: RDFNodeType,
 }
 
 impl SubjectOrObject {
@@ -52,91 +55,203 @@ impl Triplestore {
         subject: &TermPattern,
         ppe: &PropertyPathExpression,
         object: &TermPattern,
+        solution_mappings: Option<SolutionMappings>,
         context: &Context,
     ) -> Result<SolutionMappings, SparqlError> {
         let create_sparse = need_sparse_matrix(ppe);
-        let out_df;
-        let cat_df_map = self.create_cat_dfs(ppe);
+        let mut out_df;
+        let out_soo;
+        let out_dt;
+
+        let cat_df_map = self.create_unique_cat_dfs(ppe, Some(subject), Some(object));
+        let max_index = find_max_index(cat_df_map.values());
         if create_sparse {
-            if let Some(cat_df_map) = cat_df_map {
-                let max_index = find_max_index(cat_df_map.values());
-                let SparsePathReturn{ sparmat, soo, dt } = sparse_path(ppe, &cat_df_map, max_index as usize);
-                let mut subject_vec = vec![];
-                let mut object_vec = vec![];
-                for (i, row) in sparmat.outer_iterator().enumerate() {
-                    for (j,_) in row.iter() {
+            let SparsePathReturn { sparmat, soo, dt } =
+                sparse_path(ppe, &cat_df_map, max_index as usize);
+            let mut subject_vec = vec![];
+            let mut object_vec = vec![];
+            for (i, row) in sparmat.outer_iterator().enumerate() {
+                for (j, v) in row.iter() {
+                    if v > &0 {
                         subject_vec.push(i as u32);
                         object_vec.push(j as u32);
                     }
                 }
-                let subject_series = Series::from_iter(subject_vec.into_iter()).cast(&DataType::Categorical(None)).unwrap();
-                let object_series = Series::from_iter(object_vec.into_iter()).cast(&DataType::Categorical(None)).unwrap();
-                out_df = DataFrame::new(vec![subject_series, object_series]).unwrap();
-            } else {
-                todo!()
             }
+            let mut lookup_df = find_lookup(&cat_df_map);
+            let mut subject_series = Series::from_iter(subject_vec.into_iter());
+            subject_series.rename("subject_key");
+            let mut object_series = Series::from_iter(object_vec.into_iter());
+            object_series.rename("object_key");
+            out_df = DataFrame::new(vec![subject_series, object_series]).unwrap();
+            lookup_df.rename("value", "subject").unwrap();
+            out_df = out_df.join(&lookup_df, &["subject_key"], &["key"], JoinType::Inner, None).unwrap();
+            lookup_df.rename("subject", "object").unwrap();
+            out_df = out_df.join(&lookup_df, &["object_key"], &["key"], JoinType::Inner, None).unwrap();
+            out_df = out_df.select(["subject", "object"]).unwrap();
+
+        } else {
+            let DFPathReturn { df, soo, dt } = df_path(ppe, &cat_df_map, max_index);
+            out_df = df;
+            out_soo = soo;
+            out_dt = dt;
         }
-        Ok(SolutionMappings::new(
-            Default::default(),
-            Default::default(),
-            Default::default(),
-        ))
+        let mut var_cols = vec![];
+        if let TermPattern::Variable(v) = subject {
+            var_cols.push(v.as_str().to_string());
+            out_df.rename("subject", v.as_str()).unwrap();
+        } else {
+            out_df = out_df.drop("subject").unwrap();
+        }
+        if let TermPattern::Variable(v) = object {
+            var_cols.push(v.as_str().to_string());
+            out_df.rename("object", v.as_str()).unwrap();
+        } else {
+            out_df = out_df.drop("object").unwrap();
+        }
+
+        if let Some(mut mappings) = solution_mappings {
+            let join_cols: Vec<String> = var_cols
+                .clone()
+                .into_iter()
+                .filter(|x| mappings.columns.contains(x))
+                .collect();
+
+            for j in &join_cols {
+                mappings.mappings = mappings
+                    .mappings
+                    .with_column(col(j).cast(DataType::Categorical(None)));
+            }
+
+            let join_on: Vec<Expr> = join_cols.iter().map(|x| col(x)).collect();
+
+            if join_on.is_empty() {
+                mappings.mappings = mappings.mappings.join(
+                    out_df.lazy(),
+                    join_on.as_slice(),
+                    join_on.as_slice(),
+                    JoinType::Cross,
+                );
+            } else {
+                mappings.mappings = mappings.mappings.join(
+                    out_df.lazy(),
+                    join_on.as_slice(),
+                    join_on.as_slice(),
+                    JoinType::Inner,
+                );
+            }
+            //Update mapping columns
+            for c in &var_cols {
+                mappings.columns.insert(c.to_string());
+            }
+            //TODO: THIS IS WRONG
+            if let TermPattern::Variable(v) = subject {
+                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
+            }
+            if let TermPattern::Variable(v) = object {
+                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
+            }
+
+            return Ok(mappings);
+        } else {
+            let mut datatypes = HashMap::new();
+            if let TermPattern::Variable(v) = subject {
+                datatypes.insert(v.clone(), RDFNodeType::IRI);
+            }
+            if let TermPattern::Variable(v) = object {
+                datatypes.insert(v.clone(), RDFNodeType::IRI);
+            }
+            return Ok(SolutionMappings {
+                mappings: out_df.lazy(),
+                columns: var_cols.into_iter().map(|x| x.to_string()).collect(),
+                datatypes,
+            });
+        }
     }
 
-    fn create_cat_dfs(&self, ppe: &PropertyPathExpression) -> Option<HashMap<String, DataFrame>> {
+    fn create_unique_cat_dfs(
+        &self,
+        ppe: &PropertyPathExpression,
+        subject: Option<&TermPattern>,
+        object: Option<&TermPattern>,
+    ) -> HashMap<String, DataFrame> {
         match ppe {
             PropertyPathExpression::NamedNode(nn) => {
-                let df = self.get_single_nn_df(nn.as_str());
+                let df = self.get_single_nn_df(nn.as_str(), subject, object);
                 if let Some(df) = df {
-                    Some(HashMap::from([(nn.as_str().to_string(), df_with_cats(df))]))
+                    let unique_cat_df = df_with_cats(df)
+                        .unique(None, UniqueKeepStrategy::First)
+                        .unwrap();
+                    HashMap::from([(nn.as_str().to_string(), unique_cat_df)])
                 } else {
-                    None
+                    let df = DataFrame::new(vec![
+                        Series::new_empty("subject", &DataType::Categorical(None)),
+                        Series::new_empty("object", &DataType::Categorical(None)),
+                    ])
+                    .unwrap();
+                    HashMap::from([(nn.as_str().to_string(), df)])
                 }
             }
-            PropertyPathExpression::Reverse(inner) => self.create_cat_dfs(inner),
+            PropertyPathExpression::Reverse(inner) => {
+                self.create_unique_cat_dfs(inner, object, subject)
+            }
             PropertyPathExpression::Sequence(left, right) => {
-                if let (Some(mut left_df_map), Some(mut right_df_map)) =
-                    (self.create_cat_dfs(left), self.create_cat_dfs(right))
-                {
-                    left_df_map.extend(right_df_map);
-                    Some(left_df_map)
-                } else {
-                    None
-                }
+                let mut left_df_map = self.create_unique_cat_dfs(left, subject, None);
+                let mut right_df_map = self.create_unique_cat_dfs(right, None, object);
+                left_df_map.extend(right_df_map);
+                left_df_map
             }
             PropertyPathExpression::Alternative(left, right) => {
-                if let (Some(mut left_df_map), Some(mut right_df_map)) =
-                    (self.create_cat_dfs(left), self.create_cat_dfs(right))
-                {
-                    left_df_map.extend(right_df_map);
-                    Some(left_df_map)
-                } else {
-                    None
-                }
+                let mut left_df_map =
+                    self.create_unique_cat_dfs(left, subject.clone(), object.clone());
+                let mut right_df_map = self.create_unique_cat_dfs(right, subject, object);
+                left_df_map.extend(right_df_map);
+                left_df_map
             }
-            PropertyPathExpression::ZeroOrMore(inner) => self.create_cat_dfs(inner),
-            PropertyPathExpression::OneOrMore(inner) => self.create_cat_dfs(inner),
-            PropertyPathExpression::ZeroOrOne(inner) => self.create_cat_dfs(inner),
+            PropertyPathExpression::ZeroOrMore(inner) => {
+                self.create_unique_cat_dfs(inner, subject, object)
+            }
+            PropertyPathExpression::OneOrMore(inner) => {
+                self.create_unique_cat_dfs(inner, subject, object)
+            }
+            PropertyPathExpression::ZeroOrOne(inner) => {
+                self.create_unique_cat_dfs(inner, subject, object)
+            }
             PropertyPathExpression::NegatedPropertySet(nns) => {
                 let lookup: Vec<_> = nns.iter().map(|x| x.as_str().to_string()).collect();
                 let mut dfs = vec![];
                 for nn in self.df_map.keys() {
                     if !lookup.contains(nn) {
-                        let df = self.get_single_nn_df(nn);
+                        let df = self.get_single_nn_df(nn, subject, object);
                         if let Some(df) = df {
                             dfs.push(df_with_cats(df));
-                        } else {
-                            return None;
                         }
                     }
                 }
-                let df = concat_df(dfs.as_slice()).unwrap();
-                Some(HashMap::from([(nns_name(nns), df)]))
+                let df;
+                if dfs.len() > 0 {
+                    df = concat_df(dfs.as_slice())
+                        .unwrap()
+                        .unique(None, UniqueKeepStrategy::First)
+                        .unwrap();
+                } else {
+                    df = DataFrame::new(vec![
+                        Series::new_empty("subject", &DataType::Categorical(None)),
+                        Series::new_empty("object", &DataType::Categorical(None)),
+                    ])
+                    .unwrap();
+                }
+                HashMap::from([(nns_name(nns), df)])
             }
         }
     }
 
-    fn get_single_nn_df(&self, nn: &str) -> Option<&DataFrame> {
+    fn get_single_nn_df(
+        &self,
+        nn: &str,
+        subject: Option<&TermPattern>,
+        object: Option<&TermPattern>,
+    ) -> Option<DataFrame> {
         let map_opt = self.df_map.get(nn);
         if let Some(m) = map_opt {
             if m.is_empty() {
@@ -146,8 +261,34 @@ impl Triplestore {
             } else {
                 let (dt, dfs) = m.iter().next().unwrap();
                 assert_eq!(dfs.len(), 1, "Should be deduplicated");
-                let df = dfs.get(0).unwrap();
-                Some(df)
+                let mut lf = dfs.get(0).unwrap().clone().lazy(); //TODO: Inefficiency here with clone.. should filter on subject / object term before cloning.
+                if let Some(subject) = subject {
+                    if let TermPattern::NamedNode(nn) = subject {
+                        lf = lf.filter(
+                            col("subject")
+                                .eq(Expr::Literal(sparql_named_node_to_polars_literal_value(nn))),
+                        )
+                    } else if let TermPattern::Literal(l) = subject {
+                        lf = lf.filter(
+                            col("subject")
+                                .eq(Expr::Literal(sparql_literal_to_polars_literal_value(l))),
+                        )
+                    }
+                }
+                if let Some(object) = object {
+                    if let TermPattern::NamedNode(nn) = object {
+                        lf = lf.filter(
+                            col("object")
+                                .eq(Expr::Literal(sparql_named_node_to_polars_literal_value(nn))),
+                        )
+                    } else if let TermPattern::Literal(l) = object {
+                        lf = lf.filter(
+                            col("object")
+                                .eq(Expr::Literal(sparql_literal_to_polars_literal_value(l))),
+                        )
+                    }
+                }
+                Some(lf.collect().unwrap())
             }
         } else {
             None
@@ -155,7 +296,127 @@ impl Triplestore {
     }
 }
 
-fn df_with_cats(df: &DataFrame) -> DataFrame {
+fn find_lookup(map: &HashMap<String, DataFrame>) -> DataFrame {
+    let mut all_values = vec![];
+    for (k,v) in map {
+        let mut obj = v.column("object").unwrap().unique().unwrap();
+        obj.rename("value");
+        let mut sub = v.column("subject").unwrap().unique().unwrap();
+        sub.rename("value");
+        all_values.push(DataFrame::new(vec![obj]).unwrap());
+        all_values.push(DataFrame::new(vec![sub]).unwrap());
+    }
+    let mut df = concat_df(all_values.as_slice()).unwrap().unique(None, UniqueKeepStrategy::First).unwrap();
+    let mut key_col = df.column("value").unwrap().categorical().unwrap().logical().clone().into_series();
+    key_col.rename("key");
+    df.with_column(key_col).unwrap();
+    df
+}
+
+fn df_path(
+    ppe: &PropertyPathExpression,
+    cat_df_map: &HashMap<String, DataFrame>,
+    max_index: u32,
+) -> DFPathReturn {
+    match ppe {
+        PropertyPathExpression::NamedNode(nn) => {
+            let df = cat_df_map.get(nn.as_str()).unwrap();
+            DFPathReturn {
+                df: df.clone(),
+                soo: SubjectOrObject::Subject,
+                dt: RDFNodeType::IRI,
+            }
+        }
+        PropertyPathExpression::Reverse(inner) => {
+            let DFPathReturn { df, soo, dt } = df_path(inner, cat_df_map, max_index);
+            let df = df
+                .lazy()
+                .rename(["subject", "object"], ["object", "subject"])
+                .collect()
+                .unwrap();
+            DFPathReturn {
+                df,
+                soo: soo.flip(),
+                dt,
+            }
+        }
+        PropertyPathExpression::Sequence(left, right) => {
+            let DFPathReturn {
+                df: mut df_left,
+                soo: _,
+                dt: _,
+            } = df_path(left, cat_df_map, max_index);
+            let DFPathReturn {
+                df: mut df_right,
+                soo: soo_right,
+                dt: dt_right,
+            } = df_path(left, cat_df_map, max_index);
+            df_left.rename("object", "on").unwrap();
+            df_right.rename("subject", "on").unwrap();
+            let df = df_left
+                .join(&df_right, ["on"], ["on"], JoinType::Inner, None)
+                .unwrap();
+            DFPathReturn {
+                df,
+                soo: soo_right,
+                dt: dt_right,
+            }
+        }
+        PropertyPathExpression::Alternative(left, right) => {
+            let DFPathReturn {
+                df: mut df_left,
+                soo: soo_left,
+                dt: dt_left,
+            } = df_path(left, cat_df_map, max_index);
+            let DFPathReturn {
+                df: mut df_right,
+                soo: _soo_right,
+                dt: _dt_right,
+            } = df_path(left, cat_df_map, max_index);
+            let df = df_left
+                .vstack(&df_right)
+                .unwrap()
+                .unique(None, UniqueKeepStrategy::First)
+                .unwrap();
+            DFPathReturn {
+                df,
+                soo: soo_left,
+                dt: dt_left,
+            }
+        }
+        PropertyPathExpression::ZeroOrOne(inner) => {
+            let DFPathReturn { df, soo, dt } = df_path(inner, cat_df_map, max_index);
+            let mut all_subjects = Series::from_iter(0..max_index)
+                .cast(&DataType::Categorical(None))
+                .unwrap();
+            all_subjects.rename("subject");
+            let mut all_objects = Series::from_iter(0..max_index)
+                .cast(&DataType::Categorical(None))
+                .unwrap();
+            all_objects.rename("object");
+            let id_df = DataFrame::new(vec![all_subjects, all_objects]).unwrap();
+            let df = concat_df([&df, &id_df]).unwrap();
+            DFPathReturn {
+                df: df.unique(None, UniqueKeepStrategy::First).unwrap(),
+                soo,
+                dt,
+            }
+        }
+        PropertyPathExpression::NegatedPropertySet(nns) => {
+            let cat_df = cat_df_map.get(&nns_name(nns)).unwrap();
+            DFPathReturn {
+                df: cat_df.clone(),
+                soo: SubjectOrObject::Subject,
+                dt: RDFNodeType::IRI, //TODO: Fix properly
+            }
+        }
+        _ => {
+            panic!("Should never happen")
+        }
+    }
+}
+
+fn df_with_cats(df: DataFrame) -> DataFrame {
     let subject = df
         .column("subject")
         .unwrap()
@@ -196,37 +457,40 @@ fn find_max_index(vals: Values<String, DataFrame>) -> u32 {
     max_index
 }
 
-fn to_csr(df: &DataFrame, max_index: usize) -> SparseMatrix {
-    let mut subjects = vec![];
-    for subj_arr in df
-        .column("subject")
-        .unwrap()
-        .categorical()
-        .unwrap()
-        .logical()
-        .downcast_iter()
-    {
-        for s in subj_arr {
-            subjects.push(*s.unwrap() as usize);
+fn to_csr(df: &DataFrame, max_index:usize) -> SparseMatrix {
+    let sub = df.column("subject").unwrap().categorical().unwrap().logical().clone().into_series();
+    let obj = df.column("object").unwrap().categorical().unwrap().logical().clone().into_series();
+    let df = DataFrame::new(vec![
+        sub, obj
+    ]).unwrap();
+    let df = df.sort(vec!["subject", "object"], vec![false, false]).unwrap();
+    let subject = df.column("subject").unwrap();
+    let object = df.column("object").unwrap();
+    let mut subjects_vec = vec![];
+    let mut objects_vec = vec![];
+    for s in subject.iter() {
+        if let AnyValue::UInt32(s) = s {
+            subjects_vec.push(s as usize);
+        } else {
+            panic!("Should never happen");
         }
     }
-    let mut objects = vec![];
-    for obj_arr in df
-        .column("object")
-        .unwrap()
-        .categorical()
-        .unwrap()
-        .logical()
-        .downcast_iter()
-    {
-        for o in obj_arr {
-            objects.push(*o.unwrap() as usize);
+    
+    for s in object.iter() {
+        if let AnyValue::UInt32(o) = s {
+            objects_vec.push(o as usize);
+        } else {
+            panic!("Should never happen");
         }
     }
-    let ones = vec![1_u32].repeat(subjects.len());
-
-    let csr = CsMat::new((max_index, max_index), subjects, objects, ones);
-    csr
+    
+    let trimat = TriMatBase::from_triplets(
+        (max_index+1 , max_index+1),
+        subjects_vec,
+        objects_vec,
+        [1_u32].repeat(df.height())
+    );
+    trimat.to_csr()
 }
 
 fn zero_or_more(mut rel_mat: SparseMatrix) -> SparseMatrix {
@@ -246,6 +510,14 @@ fn zero_or_more(mut rel_mat: SparseMatrix) -> SparseMatrix {
             last_sum = new_sum;
         }
     }
+    rel_mat
+}
+
+fn zero_or_one(mut rel_mat: SparseMatrix) -> SparseMatrix {
+    let rows = rel_mat.rows();
+    let eye = SparseMatrix::eye(rows);
+    rel_mat = (&rel_mat + &eye).to_csr();
+    rel_mat = rel_mat.map(|x| (x > &0) as u32);
     rel_mat
 }
 
@@ -301,15 +573,15 @@ fn sparse_path(
             SparsePathReturn {
                 sparmat,
                 soo: SubjectOrObject::Subject,
-                dt: Default::default(),
+                dt: RDFNodeType::IRI,
             }
         }
         PropertyPathExpression::Reverse(inner) => {
-            let SparsePathReturn { sparmat, soo, dt } = sparse_path(inner, cat_df_map, max_index);
+            let SparsePathReturn { sparmat, soo, dt} = sparse_path(inner, cat_df_map, max_index);
             SparsePathReturn {
                 sparmat: sparmat.transpose_into(),
                 soo: soo.flip(),
-                dt,
+                dt:dt,
             }
         }
         PropertyPathExpression::Sequence(left, right) => {
@@ -352,7 +624,7 @@ fn sparse_path(
             let SparsePathReturn {
                 sparmat: sparmat_inner,
                 soo: soo,
-                dt: dt,
+                dt: dt
             } = sparse_path(inner, cat_df_map, max_index);
             let sparmat = zero_or_more(sparmat_inner);
             SparsePathReturn { sparmat, soo, dt }
@@ -372,7 +644,7 @@ fn sparse_path(
                 soo: soo,
                 dt: dt,
             } = sparse_path(inner, cat_df_map, max_index);
-            let sparmat = zero_or_more(sparmat_inner);
+            let sparmat = zero_or_one(sparmat_inner);
             SparsePathReturn { sparmat, soo, dt }
         }
         PropertyPathExpression::NegatedPropertySet(nns) => {
@@ -381,7 +653,7 @@ fn sparse_path(
             SparsePathReturn {
                 sparmat,
                 soo: SubjectOrObject::Subject,
-                dt: Default::default(),
+                dt: RDFNodeType::IRI,
             }
         }
     }
@@ -394,3 +666,36 @@ fn nns_name(nns: &Vec<NamedNode>) -> String {
     }
     names.join(",")
 }
+//
+// fn create_compatibility_mapping(a:&Series, b:&Series, name:&str) -> DataFrame {
+//     let mut a_clone = a.clone();
+//     let mut sorted_unique = a_clone.extend(b).unwrap().sort(false).unique().unwrap();
+//     sorted_unique.rename(name);
+//     let mut unique_index = Series::from_iter(0..(sorted_unique.len() as u32));
+//     unique_index.rename(&format!("{name}_index"));
+//     DataFrame::new(vec![unique_index, sorted_unique]).unwrap()
+// }
+//
+// fn create_compatible(mat:SparseMatrix, &subject_compat:DataFrame, &object_compat:DataFrame) {
+//     let mut subjects = vec![];
+//     let mut objects = vec![];
+//     let mut values = vec![];
+//     for (i,row) in mat.outer_iterator().enumerate() {
+//         for (j, v) in row.iter() {
+//             objects.push(j as u32);
+//             subjects.push(i as u32);
+//             values.push(v);
+//         }
+//     }
+//     let mut subject_ser = Series::from_iter(subjects);
+//     subject_ser.rename("subject");
+//     let subject_df = DataFrame::new(vec![subject_ser]).unwrap();
+//     let new_subjects = subject_df.join(subject_compat,&["subject"], &["subject"], JoinType::Inner, None).unwrap();
+//
+//     let mut object_ser = Series::from_iter(objects);
+//     object_ser.rename("object");
+//     let object_df = DataFrame::new(vec![object_ser]).unwrap();
+//     let new_objects = object_df.join(object_compat,&["object"], &["object"], JoinType::Inner, None).unwrap();
+//
+//     to_csr()
+// }
