@@ -277,8 +277,13 @@ def test_simple_construct_query(windpower_mapping):
     ?a a ct:something.
     ?b a ct:nothing. 
     } WHERE {?a a ?b}""")
-    print(dfs)
-    # filename = TESTDATA_PATH / "simple_query.csv"
-    # #df.write_csv(filename)
-    # expected_df = pl.scan_csv(filename).sort(["a", "b"]).collect()
-    # pl.testing.assert_frame_equal(df, expected_df)
+    something = dfs[0].sort(["subject", "object"])
+    nothing = dfs[1].sort(["subject", "object"])
+    filename_something = TESTDATA_PATH / "simple_construct_query_something.csv"
+    #something.write_csv(filename_something)
+    filename_nothing = TESTDATA_PATH / "simple_construct_query_nothing.csv"
+    #nothing.write_csv(filename_nothing)
+    expected_something_df = pl.scan_csv(filename_something).sort(["subject", "object"]).collect()
+    pl.testing.assert_frame_equal(something, expected_something_df)
+    expected_nothing_df = pl.scan_csv(filename_nothing).sort(["subject", "object"]).collect()
+    pl.testing.assert_frame_equal(nothing, expected_nothing_df)

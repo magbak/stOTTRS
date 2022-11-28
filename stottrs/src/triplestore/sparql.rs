@@ -16,10 +16,9 @@ use crate::literals::sparql_literal_to_any_value;
 use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
-use crate::triplestore::sparql::sparql_to_polars::sparql_named_node_to_polars_literal_value;
 use polars::frame::DataFrame;
 use polars::prelude::{col, IntoLazy};
-use polars_core::prelude::{DataType, Series};
+use polars_core::prelude::{DataType, Series, UniqueKeepStrategy};
 use polars_core::toggle_string_cache;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
@@ -122,7 +121,10 @@ fn triple_to_df(
     let (subj_ser, _) = term_pattern_series(df, datatypes, &t.subject, "subject", len);
     let (verb_ser, _) = named_node_pattern_series(df, datatypes, &t.predicate, "verb", len);
     let (obj_ser, dt) = term_pattern_series(df, datatypes, &t.object, "object", len);
-    let df = DataFrame::new(vec![subj_ser, verb_ser, obj_ser]).unwrap();
+    let df = DataFrame::new(vec![subj_ser, verb_ser, obj_ser])
+        .unwrap()
+        .unique(None, UniqueKeepStrategy::First)
+        .unwrap();
     Ok((df, dt))
 }
 
