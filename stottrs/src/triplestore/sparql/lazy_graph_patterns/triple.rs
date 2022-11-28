@@ -9,7 +9,6 @@ use polars_core::prelude::JoinType;
 use polars::prelude::IntoLazy;
 use polars_core::frame::DataFrame;
 use polars_core::series::Series;
-use polars_core::toggle_string_cache;
 use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
@@ -89,7 +88,6 @@ impl Triplestore {
                                     _ => {panic!("No support for datatype {:?}", dt)}
                                 }
                             }
-                            _ => {todo!("No support for {}", &triple_pattern.object)}
                         }
                         if let Some(mut mappings) = solution_mappings {
                             let join_cols:Vec<String> = var_cols.clone().into_iter().filter(|x| mappings.columns.contains(x)).collect();

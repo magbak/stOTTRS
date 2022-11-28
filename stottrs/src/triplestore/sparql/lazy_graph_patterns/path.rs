@@ -15,11 +15,10 @@ use polars_core::series::{IntoSeries, Series};
 use polars_core::utils::concat_df;
 use spargebra::algebra::PropertyPathExpression;
 use spargebra::term::TermPattern;
-use sprs::{CsMat, CsMatBase, TriMatBase};
+use sprs::{CsMatBase, TriMatBase};
 use std::cmp::max;
 use std::collections::hash_map::Values;
 use std::collections::HashMap;
-use polars_core::with_string_cache;
 
 enum SubjectOrObject {
     Subject,
@@ -85,11 +84,20 @@ impl Triplestore {
             object_series.rename("object_key");
             out_df = DataFrame::new(vec![subject_series, object_series]).unwrap();
             lookup_df.rename("value", "subject").unwrap();
-            out_df = out_df.join(&lookup_df, &["subject_key"], &["key"], JoinType::Inner, None).unwrap();
+            out_df = out_df
+                .join(
+                    &lookup_df,
+                    &["subject_key"],
+                    &["key"],
+                    JoinType::Inner,
+                    None,
+                )
+                .unwrap();
             lookup_df.rename("subject", "object").unwrap();
-            out_df = out_df.join(&lookup_df, &["object_key"], &["key"], JoinType::Inner, None).unwrap();
+            out_df = out_df
+                .join(&lookup_df, &["object_key"], &["key"], JoinType::Inner, None)
+                .unwrap();
             out_df = out_df.select(["subject", "object"]).unwrap();
-
         } else {
             let DFPathReturn { df, soo, dt } = df_path(ppe, &cat_df_map, max_index);
             out_df = df;
@@ -197,14 +205,14 @@ impl Triplestore {
             }
             PropertyPathExpression::Sequence(left, right) => {
                 let mut left_df_map = self.create_unique_cat_dfs(left, subject, None);
-                let mut right_df_map = self.create_unique_cat_dfs(right, None, object);
+                let right_df_map = self.create_unique_cat_dfs(right, None, object);
                 left_df_map.extend(right_df_map);
                 left_df_map
             }
             PropertyPathExpression::Alternative(left, right) => {
                 let mut left_df_map =
                     self.create_unique_cat_dfs(left, subject.clone(), object.clone());
-                let mut right_df_map = self.create_unique_cat_dfs(right, subject, object);
+                let right_df_map = self.create_unique_cat_dfs(right, subject, object);
                 left_df_map.extend(right_df_map);
                 left_df_map
             }
@@ -298,7 +306,7 @@ impl Triplestore {
 
 fn find_lookup(map: &HashMap<String, DataFrame>) -> DataFrame {
     let mut all_values = vec![];
-    for (k,v) in map {
+    for (k, v) in map {
         let mut obj = v.column("object").unwrap().unique().unwrap();
         obj.rename("value");
         let mut sub = v.column("subject").unwrap().unique().unwrap();
@@ -306,8 +314,18 @@ fn find_lookup(map: &HashMap<String, DataFrame>) -> DataFrame {
         all_values.push(DataFrame::new(vec![obj]).unwrap());
         all_values.push(DataFrame::new(vec![sub]).unwrap());
     }
-    let mut df = concat_df(all_values.as_slice()).unwrap().unique(None, UniqueKeepStrategy::First).unwrap();
-    let mut key_col = df.column("value").unwrap().categorical().unwrap().logical().clone().into_series();
+    let mut df = concat_df(all_values.as_slice())
+        .unwrap()
+        .unique(None, UniqueKeepStrategy::First)
+        .unwrap();
+    let mut key_col = df
+        .column("value")
+        .unwrap()
+        .categorical()
+        .unwrap()
+        .logical()
+        .clone()
+        .into_series();
     key_col.rename("key");
     df.with_column(key_col).unwrap();
     df
@@ -457,13 +475,27 @@ fn find_max_index(vals: Values<String, DataFrame>) -> u32 {
     max_index
 }
 
-fn to_csr(df: &DataFrame, max_index:usize) -> SparseMatrix {
-    let sub = df.column("subject").unwrap().categorical().unwrap().logical().clone().into_series();
-    let obj = df.column("object").unwrap().categorical().unwrap().logical().clone().into_series();
-    let df = DataFrame::new(vec![
-        sub, obj
-    ]).unwrap();
-    let df = df.sort(vec!["subject", "object"], vec![false, false]).unwrap();
+fn to_csr(df: &DataFrame, max_index: usize) -> SparseMatrix {
+    let sub = df
+        .column("subject")
+        .unwrap()
+        .categorical()
+        .unwrap()
+        .logical()
+        .clone()
+        .into_series();
+    let obj = df
+        .column("object")
+        .unwrap()
+        .categorical()
+        .unwrap()
+        .logical()
+        .clone()
+        .into_series();
+    let df = DataFrame::new(vec![sub, obj]).unwrap();
+    let df = df
+        .sort(vec!["subject", "object"], vec![false, false])
+        .unwrap();
     let subject = df.column("subject").unwrap();
     let object = df.column("object").unwrap();
     let mut subjects_vec = vec![];
@@ -475,7 +507,7 @@ fn to_csr(df: &DataFrame, max_index:usize) -> SparseMatrix {
             panic!("Should never happen");
         }
     }
-    
+
     for s in object.iter() {
         if let AnyValue::UInt32(o) = s {
             objects_vec.push(o as usize);
@@ -483,12 +515,12 @@ fn to_csr(df: &DataFrame, max_index:usize) -> SparseMatrix {
             panic!("Should never happen");
         }
     }
-    
+
     let trimat = TriMatBase::from_triplets(
-        (max_index+1 , max_index+1),
+        (max_index + 1, max_index + 1),
         subjects_vec,
         objects_vec,
-        [1_u32].repeat(df.height())
+        [1_u32].repeat(df.height()),
     );
     trimat.to_csr()
 }
@@ -577,11 +609,11 @@ fn sparse_path(
             }
         }
         PropertyPathExpression::Reverse(inner) => {
-            let SparsePathReturn { sparmat, soo, dt} = sparse_path(inner, cat_df_map, max_index);
+            let SparsePathReturn { sparmat, soo, dt } = sparse_path(inner, cat_df_map, max_index);
             SparsePathReturn {
                 sparmat: sparmat.transpose_into(),
                 soo: soo.flip(),
-                dt:dt,
+                dt: dt,
             }
         }
         PropertyPathExpression::Sequence(left, right) => {
@@ -624,7 +656,7 @@ fn sparse_path(
             let SparsePathReturn {
                 sparmat: sparmat_inner,
                 soo: soo,
-                dt: dt
+                dt: dt,
             } = sparse_path(inner, cat_df_map, max_index);
             let sparmat = zero_or_more(sparmat_inner);
             SparsePathReturn { sparmat, soo, dt }
@@ -666,36 +698,3 @@ fn nns_name(nns: &Vec<NamedNode>) -> String {
     }
     names.join(",")
 }
-//
-// fn create_compatibility_mapping(a:&Series, b:&Series, name:&str) -> DataFrame {
-//     let mut a_clone = a.clone();
-//     let mut sorted_unique = a_clone.extend(b).unwrap().sort(false).unique().unwrap();
-//     sorted_unique.rename(name);
-//     let mut unique_index = Series::from_iter(0..(sorted_unique.len() as u32));
-//     unique_index.rename(&format!("{name}_index"));
-//     DataFrame::new(vec![unique_index, sorted_unique]).unwrap()
-// }
-//
-// fn create_compatible(mat:SparseMatrix, &subject_compat:DataFrame, &object_compat:DataFrame) {
-//     let mut subjects = vec![];
-//     let mut objects = vec![];
-//     let mut values = vec![];
-//     for (i,row) in mat.outer_iterator().enumerate() {
-//         for (j, v) in row.iter() {
-//             objects.push(j as u32);
-//             subjects.push(i as u32);
-//             values.push(v);
-//         }
-//     }
-//     let mut subject_ser = Series::from_iter(subjects);
-//     subject_ser.rename("subject");
-//     let subject_df = DataFrame::new(vec![subject_ser]).unwrap();
-//     let new_subjects = subject_df.join(subject_compat,&["subject"], &["subject"], JoinType::Inner, None).unwrap();
-//
-//     let mut object_ser = Series::from_iter(objects);
-//     object_ser.rename("object");
-//     let object_df = DataFrame::new(vec![object_ser]).unwrap();
-//     let new_objects = object_df.join(object_compat,&["object"], &["object"], JoinType::Inner, None).unwrap();
-//
-//     to_csr()
-// }
