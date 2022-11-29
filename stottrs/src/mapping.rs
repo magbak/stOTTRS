@@ -15,7 +15,8 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::path::Path;
-use oxrdf::{NamedNode, Triple};
+use oxrdf::{NamedNode, NamedNodeRef, Triple};
+use oxrdf::vocab::xsd;
 use crate::triplestore::Triplestore;
 
 pub struct Mapping {
@@ -47,6 +48,25 @@ pub enum RDFNodeType {
     BlankNode,
     Literal(NamedNode),
     None,
+}
+
+impl RDFNodeType {
+    pub fn is_lit_type(&self, nnref:NamedNodeRef) -> bool {
+        if let RDFNodeType::Literal(l) = self {
+            if l.as_ref() == nnref {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_bool(&self) -> bool {
+        self.is_lit_type(xsd::BOOLEAN)
+    }
+
+    pub fn is_float(&self) -> bool {
+        self.is_lit_type(xsd::FLOAT)
+    }
 }
 
 #[derive(Debug, PartialEq)]

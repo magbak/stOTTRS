@@ -154,25 +154,25 @@ impl Triplestore {
             }
             //TODO: THIS IS WRONG
             if let TermPattern::Variable(v) = subject {
-                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
+                mappings.rdf_node_types.insert(v.as_str().to_string(), RDFNodeType::IRI);
             }
             if let TermPattern::Variable(v) = object {
-                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
+                mappings.rdf_node_types.insert(v.as_str().to_string(), RDFNodeType::IRI);
             }
 
             return Ok(mappings);
         } else {
             let mut datatypes = HashMap::new();
             if let TermPattern::Variable(v) = subject {
-                datatypes.insert(v.clone(), RDFNodeType::IRI);
+                datatypes.insert(v.as_str().to_string(), RDFNodeType::IRI);
             }
             if let TermPattern::Variable(v) = object {
-                datatypes.insert(v.clone(), RDFNodeType::IRI);
+                datatypes.insert(v.as_str().to_string(), RDFNodeType::IRI);
             }
             return Ok(SolutionMappings {
                 mappings: out_df.lazy(),
                 columns: var_cols.into_iter().map(|x| x.to_string()).collect(),
-                datatypes,
+                rdf_node_types: datatypes,
             });
         }
     }

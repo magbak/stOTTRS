@@ -287,3 +287,34 @@ def test_simple_construct_query(windpower_mapping):
     pl.testing.assert_frame_equal(something, expected_something_df)
     expected_nothing_df = pl.scan_csv(filename_nothing).sort(["subject", "object"]).collect()
     pl.testing.assert_frame_equal(nothing, expected_nothing_df)
+
+def test_simple_update_construct_query(windpower_mapping):
+    windpower_mapping.construct_update("""
+    PREFIX ct:<https://github.com/magbak/chrontext#>
+    CONSTRUCT {
+    ?a a ct:somethingTestit.
+    ?b a ct:nothingTestit. 
+    } WHERE {?a a ?b}""")
+
+    something = windpower_mapping.query("""
+        PREFIX ct:<https://github.com/magbak/chrontext#>
+        SELECT ?a
+        WHERE {
+        ?a a ct:somethingTestit .
+        }
+    """).sort(["a"])
+    nothing = windpower_mapping.query("""
+            PREFIX ct:<https://github.com/magbak/chrontext#>
+            SELECT ?a
+            WHERE {
+            ?a a ct:nothingTestit .
+            }
+        """).sort(["a"])
+    filename_something = TESTDATA_PATH / "simple_construct_update_query_something.csv"
+    #something.write_csv(filename_something)
+    filename_nothing = TESTDATA_PATH / "simple_construct_update_query_nothing.csv"
+    #nothing.write_csv(filename_nothing)
+    expected_something_df = pl.scan_csv(filename_something).sort(["a"]).collect()
+    pl.testing.assert_frame_equal(something, expected_something_df)
+    expected_nothing_df = pl.scan_csv(filename_nothing).sort(["a"]).collect()
+    pl.testing.assert_frame_equal(nothing, expected_nothing_df)

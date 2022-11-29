@@ -41,7 +41,7 @@ impl Triplestore {
         let SolutionMappings {
             mut mappings,
             columns,
-            datatypes,
+            rdf_node_types: datatypes,
         } = output_solution_mappings;
 
         mappings = mappings.sort_by_exprs(

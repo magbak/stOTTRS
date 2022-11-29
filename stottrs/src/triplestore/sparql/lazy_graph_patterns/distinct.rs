@@ -14,7 +14,7 @@ impl Triplestore {
         context: &Context,
     ) -> Result<SolutionMappings, SparqlError> {
         debug!("Processing distinct graph pattern");
-        let SolutionMappings { mappings, columns, datatypes } = self.lazy_graph_pattern(
+        let SolutionMappings { mappings, columns, rdf_node_types: datatypes } = self.lazy_graph_pattern(
             inner,
             solution_mappings,
             &context.extension_with(PathEntry::DistinctInner),

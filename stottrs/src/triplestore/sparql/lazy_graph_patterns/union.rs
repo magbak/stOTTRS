@@ -21,7 +21,7 @@ impl Triplestore {
         let SolutionMappings {
             mappings: left_mappings,
             columns: mut left_columns,
-            datatypes: mut left_datatypes,
+            rdf_node_types: mut left_datatypes,
         } = self
             .lazy_graph_pattern(
                 &left,
@@ -33,7 +33,7 @@ impl Triplestore {
         let SolutionMappings {
             mappings: right_mappings,
             columns: right_columns,
-            datatypes: mut right_datatypes,
+            rdf_node_types: mut right_datatypes,
         } = self
             .lazy_graph_pattern(
                 right,

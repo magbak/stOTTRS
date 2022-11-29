@@ -30,14 +30,14 @@ pub enum QueryResult {
 
 impl Triplestore {
     pub fn query(&mut self, query: &str) -> Result<QueryResult, SparqlError> {
-        if !self.deduplicated {
-            self.deduplicate()
-        }
         let query = Query::parse(query, None).map_err(|x| SparqlError::ParseError(x))?;
         self.query_parsed(&query)
     }
 
-    fn query_parsed(&self, query: &Query) -> Result<QueryResult, SparqlError> {
+    fn query_parsed(&mut self, query: &Query) -> Result<QueryResult, SparqlError> {
+        if !self.deduplicated {
+            self.deduplicate()
+        }
         toggle_string_cache(true);
         let context = Context::new();
         match query {
@@ -49,7 +49,7 @@ impl Triplestore {
                 let SolutionMappings {
                     mappings,
                     columns: _,
-                    datatypes: _,
+                    rdf_node_types: _,
                 } = self.lazy_graph_pattern(&pattern, None, &context)?;
                 let df = mappings.collect().unwrap();
                 let mut cats = vec![];
@@ -74,12 +74,12 @@ impl Triplestore {
                 let SolutionMappings {
                     mappings,
                     columns: _,
-                    datatypes,
+                    rdf_node_types: rdf_node_types,
                 } = self.lazy_graph_pattern(&pattern, None, &context)?;
                 let df = mappings.collect().unwrap();
                 let mut dfs = vec![];
                 for t in template {
-                    dfs.push(triple_to_df(&df, &datatypes, t)?);
+                    dfs.push(triple_to_df(&df, &rdf_node_types, t)?);
                 }
                 Ok(QueryResult::Construct(dfs))
             }
@@ -110,7 +110,7 @@ impl Triplestore {
 
 fn triple_to_df(
     df: &DataFrame,
-    datatypes: &HashMap<Variable, RDFNodeType>,
+    rdf_node_types: &HashMap<String, RDFNodeType>,
     t: &TriplePattern,
 ) -> Result<(DataFrame, RDFNodeType), SparqlError> {
     let len = if triple_has_variable(t) {
@@ -118,9 +118,9 @@ fn triple_to_df(
     } else {
         1
     };
-    let (subj_ser, _) = term_pattern_series(df, datatypes, &t.subject, "subject", len);
-    let (verb_ser, _) = named_node_pattern_series(df, datatypes, &t.predicate, "verb", len);
-    let (obj_ser, dt) = term_pattern_series(df, datatypes, &t.object, "object", len);
+    let (subj_ser, _) = term_pattern_series(df, rdf_node_types, &t.subject, "subject", len);
+    let (verb_ser, _) = named_node_pattern_series(df, rdf_node_types, &t.predicate, "verb", len);
+    let (obj_ser, dt) = term_pattern_series(df, rdf_node_types, &t.object, "object", len);
     let df = DataFrame::new(vec![subj_ser, verb_ser, obj_ser])
         .unwrap()
         .unique(None, UniqueKeepStrategy::First)
@@ -140,7 +140,7 @@ fn triple_has_variable(t: &TriplePattern) -> bool {
 
 fn term_pattern_series(
     df: &DataFrame,
-    datatypes: &HashMap<Variable, RDFNodeType>,
+    rdf_node_types: &HashMap<String, RDFNodeType>,
     tp: &TermPattern,
     name: &str,
     len: usize,
@@ -164,20 +164,20 @@ fn term_pattern_series(
                 RDFNodeType::Literal(dt),
             )
         }
-        TermPattern::Variable(v) => variable_series(df, datatypes, v, name),
+        TermPattern::Variable(v) => variable_series(df, rdf_node_types, v, name),
     }
 }
 
 fn named_node_pattern_series(
     df: &DataFrame,
-    datatypes: &HashMap<Variable, RDFNodeType>,
+    rdf_node_types: &HashMap<String, RDFNodeType>,
     nnp: &NamedNodePattern,
     name: &str,
     len: usize,
 ) -> (Series, RDFNodeType) {
     match nnp {
         NamedNodePattern::NamedNode(nn) => named_node_series(nn, name, len),
-        NamedNodePattern::Variable(v) => variable_series(df, datatypes, v, name),
+        NamedNodePattern::Variable(v) => variable_series(df, rdf_node_types, v, name),
     }
 }
 
@@ -190,11 +190,11 @@ fn named_node_series(nn: &NamedNode, name: &str, len: usize) -> (Series, RDFNode
 
 fn variable_series(
     df: &DataFrame,
-    datatypes: &HashMap<Variable, RDFNodeType>,
+    rdf_node_types: &HashMap<String, RDFNodeType>,
     v: &Variable,
     name: &str,
 ) -> (Series, RDFNodeType) {
     let mut ser = df.column(v.as_str()).unwrap().clone();
     ser.rename(name);
-    (ser, datatypes.get(v).unwrap().clone())
+    (ser, rdf_node_types.get(v.as_str()).unwrap().clone())
 }

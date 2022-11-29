@@ -80,7 +80,7 @@ impl Triplestore {
             }
             for (k,v) in datatypes {
                 let var = variables.get(k).unwrap();
-                mappings.datatypes.insert(var.clone(), v);
+                mappings.rdf_node_types.insert(var.as_str().to_string(), v);
             }
             if join_on.is_empty() {
                 mappings.mappings = mappings.mappings.join(df.lazy(), join_cols.as_slice(), join_cols.as_slice(), JoinType::Cross);
@@ -92,7 +92,7 @@ impl Triplestore {
             let mut out_datatypes = HashMap::new();
             for (k,v) in datatypes {
                 let var = variables.get(k).unwrap();
-                out_datatypes.insert(var.clone(), v);
+                out_datatypes.insert(var.as_str().to_string(), v);
             }
             Ok(SolutionMappings::new(df.lazy(), variables.iter().map(|x|x.as_str().to_string()).collect(), out_datatypes))
         }

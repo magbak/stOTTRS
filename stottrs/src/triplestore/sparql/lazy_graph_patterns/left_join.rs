@@ -49,7 +49,7 @@ impl Triplestore {
                 .filter(col(&expression_context.as_str()))
                 .drop_columns([&expression_context.as_str()]);
         }
-        let SolutionMappings{ mappings: right_mappings, columns: mut right_columns, datatypes: mut right_datatypes } = right_solution_mappings;
+        let SolutionMappings{ mappings: right_mappings, columns: mut right_columns, rdf_node_types: mut right_datatypes } = right_solution_mappings;
 
         let mut join_on:Vec<&String> = left_solution_mappings.columns.intersection(&right_columns).collect();
         join_on.sort();
@@ -65,13 +65,13 @@ impl Triplestore {
            left_solution_mappings.columns.insert(c);
         }
         for (var, dt) in right_datatypes.drain() {
-            if let Some(dt_left) = left_solution_mappings.datatypes.get(&var) {
+            if let Some(dt_left) = left_solution_mappings.rdf_node_types.get(&var) {
                 //TODO: handle compatibility
                 // if &dt != dt_left {
                 //     return Err(SparqlError::InconsistentDatatypes(var.clone(), dt_left.clone(), dt, context.clone()))
                 // }
             } else {
-                left_solution_mappings.datatypes.insert(var,dt);
+                left_solution_mappings.rdf_node_types.insert(var, dt);
             }
         }
 

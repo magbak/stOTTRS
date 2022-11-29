@@ -111,25 +111,25 @@ impl Triplestore {
                                 mappings.columns.insert(c.to_string());
                             }
                             if let TermPattern::Variable(v) = &triple_pattern.subject {
-                                mappings.datatypes.insert(v.clone(), RDFNodeType::IRI);
+                                mappings.rdf_node_types.insert(v.as_str().to_string(), RDFNodeType::IRI);
                             }
                             if let TermPattern::Variable(v) = &triple_pattern.object {
-                                mappings.datatypes.insert(v.clone(), dt.clone());
+                                mappings.rdf_node_types.insert(v.as_str().to_string(), dt.clone());
                             }
 
                             return Ok(mappings)
                         } else {
                             let mut datatypes = HashMap::new();
                             if let TermPattern::Variable(v) = &triple_pattern.subject {
-                                datatypes.insert(v.clone(), RDFNodeType::IRI);
+                                datatypes.insert(v.as_str().to_string(), RDFNodeType::IRI);
                             }
                             if let TermPattern::Variable(v) = &triple_pattern.object {
-                                datatypes.insert(v.clone(), dt.clone());
+                                datatypes.insert(v.as_str().to_string(), dt.clone());
                             }
                             return Ok(SolutionMappings {
                                 mappings: lf,
                                 columns: var_cols.into_iter().map(|x|x.to_string()).collect(),
-                                datatypes
+                                rdf_node_types: datatypes
                             })
                         }
                     }
@@ -139,15 +139,15 @@ impl Triplestore {
                     let mut out_datatypes = HashMap::new();
                     if let TermPattern::Variable(v) = &triple_pattern.subject {
                         out_columns.insert(v.as_str().to_string());
-                        out_datatypes.insert(v.clone(), RDFNodeType::None);
+                        out_datatypes.insert(v.as_str().to_string(), RDFNodeType::None);
                     }
                     if let TermPattern::Variable(v) = &triple_pattern.object {
                         out_columns.insert(v.as_str().to_string());
-                        out_datatypes.insert(v.clone(), RDFNodeType::None);
+                        out_datatypes.insert(v.as_str().to_string(), RDFNodeType::None);
                     }
                     let mut variables:Vec<&String> = out_columns.iter().collect();
                     variables.sort();
-                    if let Some(SolutionMappings{ mut mappings, mut columns, mut datatypes }) = solution_mappings {
+                    if let Some(SolutionMappings{ mut mappings, mut columns, rdf_node_types: mut datatypes }) = solution_mappings {
                         mappings = mappings.filter(lit(false));
                         let overlap:Vec<&String> = columns.intersection(&out_columns).collect();
                         if overlap.is_empty() {

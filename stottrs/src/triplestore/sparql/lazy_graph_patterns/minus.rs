@@ -34,7 +34,7 @@ impl Triplestore {
             )
             ?;
 
-        let SolutionMappings{ mappings: right_mappings, columns:  right_columns, datatypes: _ } = right_solution_mappings;
+        let SolutionMappings{ mappings: right_mappings, columns:  right_columns, rdf_node_types: _ } = right_solution_mappings;
 
         let mut join_on:Vec<&String> = left_solution_mappings.columns.intersection(&right_columns).collect();
         join_on.sort();

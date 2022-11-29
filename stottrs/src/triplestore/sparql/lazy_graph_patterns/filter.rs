@@ -23,7 +23,7 @@ impl Triplestore {
             input_solution_mappings,
             &inner_context,
         )?;
-        let SolutionMappings { mut mappings, columns, datatypes } = self.lazy_expression(expression, output_solution_mappings, &expression_context)?;
+        let SolutionMappings { mut mappings, columns, rdf_node_types: datatypes } = self.lazy_expression(expression, output_solution_mappings, &expression_context)?;
         mappings = mappings
             .filter(col(&expression_context.as_str()))
             .drop_columns([&expression_context.as_str()]);

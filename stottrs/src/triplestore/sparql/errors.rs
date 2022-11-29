@@ -1,4 +1,3 @@
-use oxrdf::{Variable};
 use spargebra::ParseError;
 use thiserror::Error;
 use crate::mapping::RDFNodeType;
@@ -11,5 +10,5 @@ pub enum SparqlError {
     #[error("Query type not supported")]
     QueryTypeNotSupported,
     #[error("Inconsistent datatypes")]
-    InconsistentDatatypes(Variable, RDFNodeType, RDFNodeType, Context)
+    InconsistentDatatypes(String, RDFNodeType, RDFNodeType, Context)
 }

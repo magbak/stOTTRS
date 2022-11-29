@@ -9,6 +9,7 @@ use polars::lazy::dsl::is_not_null;
 use polars::prelude::{col, Expr, LiteralValue, Operator, Series, UniqueKeepStrategy, IntoLazy};
 use polars_core::prelude::IntoSeries;
 use spargebra::algebra::{Expression, Function};
+use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::lazy_expressions::exists_helper::rewrite_exists_graph_pattern;
 use crate::triplestore::sparql::query_context::{Context, PathEntry};
@@ -28,6 +29,7 @@ impl Triplestore {
                     Expr::Literal(sparql_named_node_to_polars_literal_value(nn))
                         .alias(context.as_str()),
                 );
+                solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::IRI);
                 solution_mappings
             }
             Expression::Literal(lit) => {
@@ -35,12 +37,15 @@ impl Triplestore {
                     Expr::Literal(sparql_literal_to_polars_literal_value(lit))
                         .alias(context.as_str()),
                 );
+                solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(lit.datatype().into_owned()));
                 solution_mappings
             }
             Expression::Variable(v) => {
                 solution_mappings.mappings = solution_mappings
                     .mappings
                     .with_column(col(v.as_str()).alias(context.as_str()));
+                let existing_type = solution_mappings.rdf_node_types.get(v.as_str()).unwrap();
+                solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                 solution_mappings
             }
             Expression::Or(left, right) => {
@@ -72,6 +77,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::And(left, right) => {
@@ -102,6 +108,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::Equal(left, right) => {
@@ -128,6 +135,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::SameTerm(_, _) => {
@@ -157,6 +165,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::GreaterOrEqual(left, right) => {
@@ -184,6 +193,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::Less(left, right) => {
@@ -210,6 +220,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::LessOrEqual(left, right) => {
@@ -237,6 +248,7 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::In(left, right) => {
@@ -281,6 +293,7 @@ impl Triplestore {
                             .map(|x| x.as_str())
                             .collect::<Vec<&str>>(),
                     );
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::Add(left, right) => {
@@ -307,6 +320,9 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                let left_type = output_solution_mappings.rdf_node_types.get(left_context.as_str()).unwrap();
+                let right_type = output_solution_mappings.rdf_node_types.get(right_context.as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), binop_type(left_type, right_type));
                 output_solution_mappings
             }
             Expression::Subtract(left, right) => {
@@ -333,6 +349,9 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                let left_type = output_solution_mappings.rdf_node_types.get(left_context.as_str()).unwrap();
+                let right_type = output_solution_mappings.rdf_node_types.get(right_context.as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), binop_type(left_type, right_type));
                 output_solution_mappings
             }
             Expression::Multiply(left, right) => {
@@ -360,6 +379,9 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                let left_type = output_solution_mappings.rdf_node_types.get(left_context.as_str()).unwrap();
+                let right_type = output_solution_mappings.rdf_node_types.get(right_context.as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), binop_type(left_type, right_type));
                 output_solution_mappings
             }
             Expression::Divide(left, right) => {
@@ -387,6 +409,8 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([left_context.as_str(), right_context.as_str()]);
+                //Todo: probably not true..
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::DOUBLE.into_owned()));
                 output_solution_mappings
             }
             Expression::UnaryPlus(inner) => {
@@ -408,6 +432,8 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([&plus_context.as_str()]);
+                let existing_type = output_solution_mappings.rdf_node_types.get(plus_context.as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                 output_solution_mappings
             }
             Expression::UnaryMinus(inner) => {
@@ -428,6 +454,8 @@ impl Triplestore {
                         .alias(context.as_str()),
                     )
                     .drop_columns([&minus_context.as_str()]);
+                let existing_type = output_solution_mappings.rdf_node_types.get(minus_context.as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                 output_solution_mappings
             }
             Expression::Not(inner) => {
@@ -441,6 +469,7 @@ impl Triplestore {
                     .mappings
                     .with_column(col(&not_context.as_str()).not().alias(context.as_str()))
                     .drop_columns([&not_context.as_str()]);
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 output_solution_mappings
             }
             Expression::Exists(inner) => {
@@ -456,7 +485,7 @@ impl Triplestore {
                     Some(output_solution_mappings.clone()),
                     &exists_context,
                 )?;
-                let SolutionMappings {mappings, columns, datatypes} = output_solution_mappings;
+                let SolutionMappings {mappings, columns, mut rdf_node_types } = output_solution_mappings;
                 let mut df = mappings.collect().unwrap();
                 let exists_df = exists_lf
                     .select([col(&exists_context.as_str())])
@@ -472,10 +501,12 @@ impl Triplestore {
                 ser.rename(context.as_str());
                 df.with_column(ser).unwrap();
                 df = df.drop(&exists_context.as_str()).unwrap();
-                SolutionMappings::new(df.lazy(), columns, datatypes)
+                rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
+                SolutionMappings::new(df.lazy(), columns, rdf_node_types)
             }
             Expression::Bound(v) => {
                 solution_mappings.mappings = solution_mappings.mappings.with_column(col(v.as_str()).is_null().alias(context.as_str()));
+                solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::BOOLEAN.into_owned()));
                 solution_mappings
             }
             Expression::If(left, middle, right) => {
@@ -495,7 +526,7 @@ impl Triplestore {
                 output_solution_mappings = self.lazy_expression(
                     right,
                     output_solution_mappings,
-                    &context.extension_with(PathEntry::IfRight),
+                    &right_context,
                 )?;
 
                 output_solution_mappings.mappings = output_solution_mappings
@@ -513,6 +544,9 @@ impl Triplestore {
                         middle_context.as_str(),
                         right_context.as_str(),
                     ]);
+                //Todo: generalize..
+                let existing_type = output_solution_mappings.rdf_node_types.get(middle_context.as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                 output_solution_mappings
             }
             Expression::Coalesce(inner) => {
@@ -547,6 +581,9 @@ impl Triplestore {
                             .map(|c| c.as_str())
                             .collect::<Vec<&str>>(),
                     );
+                //TODO: generalize
+                let existing_type = output_solution_mappings.rdf_node_types.get(inner_contexts.get(0).unwrap().as_str()).unwrap();
+                output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                 output_solution_mappings
             }
             Expression::FunctionCall(func, args) => {
@@ -578,6 +615,7 @@ impl Triplestore {
                                     .year()
                                     .alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::UNSIGNED_INT.into_owned()));
                     }
                     Function::Month => {
                         assert_eq!(args.len(), 1);
@@ -589,6 +627,7 @@ impl Triplestore {
                                     .month()
                                     .alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::UNSIGNED_INT.into_owned()));
                     }
                     Function::Day => {
                         assert_eq!(args.len(), 1);
@@ -600,6 +639,7 @@ impl Triplestore {
                                     .day()
                                     .alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::UNSIGNED_INT.into_owned()));
                     }
                     Function::Hours => {
                         assert_eq!(args.len(), 1);
@@ -611,6 +651,7 @@ impl Triplestore {
                                     .hour()
                                     .alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::UNSIGNED_INT.into_owned()));
                     }
                     Function::Minutes => {
                         assert_eq!(args.len(), 1);
@@ -622,6 +663,7 @@ impl Triplestore {
                                     .minute()
                                     .alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::UNSIGNED_INT.into_owned()));
                     }
                     Function::Seconds => {
                         assert_eq!(args.len(), 1);
@@ -633,6 +675,7 @@ impl Triplestore {
                                     .second()
                                     .alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::UNSIGNED_INT.into_owned()));
                     }
                     Function::Abs => {
                         assert_eq!(args.len(), 1);
@@ -641,6 +684,8 @@ impl Triplestore {
                             output_solution_mappings.mappings.with_column(
                                 col(&first_context.as_str()).abs().alias(context.as_str()),
                             );
+                        let existing_type = output_solution_mappings.rdf_node_types.get(first_context.as_str()).unwrap();
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                     }
                     Function::Ceil => {
                         assert_eq!(args.len(), 1);
@@ -649,6 +694,7 @@ impl Triplestore {
                             output_solution_mappings.mappings.with_column(
                                 col(&first_context.as_str()).ceil().alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::INTEGER.into_owned()));
                     }
                     Function::Floor => {
                         assert_eq!(args.len(), 1);
@@ -657,10 +703,11 @@ impl Triplestore {
                             output_solution_mappings.mappings.with_column(
                                 col(&first_context.as_str()).floor().alias(context.as_str()),
                             );
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::INTEGER.into_owned()));
                     }
                     Function::Concat => {
                         assert!(args.len() > 1);
-                        let SolutionMappings { mappings, columns, datatypes } = output_solution_mappings;
+                        let SolutionMappings { mappings, columns, rdf_node_types: datatypes } = output_solution_mappings;
                         let mut inner_df = mappings.collect().unwrap();
                         let series = args_contexts
                             .iter()
@@ -670,7 +717,8 @@ impl Triplestore {
                             concat_str(series.as_slice(), "").unwrap().into_series();
                         concat_series.rename(context.as_str());
                         inner_df.with_column(concat_series).unwrap();
-                        output_solution_mappings = SolutionMappings::new(inner_df.lazy(), columns, datatypes)
+                        output_solution_mappings = SolutionMappings::new(inner_df.lazy(), columns, datatypes);
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::STRING.into_owned()));
                     }
                     Function::Round => {
                         assert_eq!(args.len(), 1);
@@ -681,6 +729,8 @@ impl Triplestore {
                                     .round(0)
                                     .alias(context.as_str()),
                             );
+                        let existing_type = output_solution_mappings.rdf_node_types.get(first_context.as_str()).unwrap();
+                        output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), existing_type.clone());
                     }
                     Function::Custom(nn) => {
                         let iri = nn.as_str();
@@ -693,6 +743,8 @@ impl Triplestore {
                                         .cast(DataType::Int64)
                                         .alias(context.as_str()),
                                 );
+                            output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::INTEGER.into_owned()));
+
                         } else if iri == xsd::STRING.as_str() {
                             assert_eq!(args.len(), 1);
                             let first_context = args_contexts.get(0).unwrap();
@@ -702,6 +754,7 @@ impl Triplestore {
                                         .cast(DataType::Utf8)
                                         .alias(context.as_str()),
                                 );
+                            output_solution_mappings.rdf_node_types.insert(context.as_str().to_string(), RDFNodeType::Literal(xsd::STRING.into_owned()));
                         }  else {
                             todo!("{:?}", nn)
                         }
@@ -720,5 +773,23 @@ impl Triplestore {
             }
         };
         Ok(output_solution_mappings)
+    }
+}
+
+fn binop_type(left_type:&RDFNodeType, right_type:&RDFNodeType) -> RDFNodeType {
+    if let (RDFNodeType::Literal(left_lit), RDFNodeType::Literal(right_lit)) = (left_type, right_type) {
+        if left_lit.as_ref() == xsd::DOUBLE {
+            return left_type.clone()
+        } else if right_lit.as_ref() == xsd::DOUBLE {
+            return right_type.clone()
+        } else if left_lit.as_ref() == xsd::FLOAT {
+            return left_type.clone()
+        } else if right_lit.as_ref() == xsd::FLOAT {
+            return right_type.clone()
+        } else {
+            return RDFNodeType::Literal(xsd::INTEGER.into_owned())
+        }
+    } else {
+        panic!("Incompatible types for operation")
     }
 }

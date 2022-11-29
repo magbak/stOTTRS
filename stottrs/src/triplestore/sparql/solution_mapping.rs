@@ -1,5 +1,4 @@
 use std::collections::{HashMap, HashSet};
-use oxrdf::{Variable};
 use polars::prelude::LazyFrame;
 use crate::mapping::RDFNodeType;
 
@@ -7,15 +6,15 @@ use crate::mapping::RDFNodeType;
 pub struct SolutionMappings {
     pub mappings: LazyFrame,
     pub columns: HashSet<String>,
-    pub datatypes: HashMap<Variable, RDFNodeType>
+    pub rdf_node_types: HashMap<String, RDFNodeType>
 }
 
 impl SolutionMappings {
-    pub fn new(mappings: LazyFrame, columns:HashSet<String>, datatypes: HashMap<Variable, RDFNodeType>) -> SolutionMappings {
+    pub fn new(mappings: LazyFrame, columns:HashSet<String>, datatypes: HashMap<String, RDFNodeType>) -> SolutionMappings {
         SolutionMappings {
             mappings,
             columns,
-            datatypes
+            rdf_node_types: datatypes
         }
     }
 }

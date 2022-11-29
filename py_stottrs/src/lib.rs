@@ -253,7 +253,11 @@ impl Mapping {
                 Ok(df_vec_to_py_df_list(dfs,py)?.into())
             }
         }
+    }
 
+    pub fn construct_update(&mut self, py: Python<'_>, query:String) -> PyResult<()> {
+        self.inner.triplestore.construct_update(&query).map_err(PyMapperError::from)?;
+        Ok(())
     }
 
     pub fn to_triples(&mut self) -> PyResult<Vec<Triple>> {
