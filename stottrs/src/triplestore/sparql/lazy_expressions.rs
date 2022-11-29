@@ -41,6 +41,9 @@ impl Triplestore {
                 solution_mappings
             }
             Expression::Variable(v) => {
+                if !solution_mappings.columns.contains(v.as_str()) {
+                    return Err(SparqlError::VariableNotFound(v.as_str().to_string(), context.as_str().to_string()))
+                }
                 solution_mappings.mappings = solution_mappings
                     .mappings
                     .with_column(col(v.as_str()).alias(context.as_str()));

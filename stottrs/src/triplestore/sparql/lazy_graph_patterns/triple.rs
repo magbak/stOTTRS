@@ -172,7 +172,9 @@ impl Triplestore {
                     } else {
                         let mut series = vec![];
                         for var in variables {
-                            series.push(Series::new_empty(var, &DataType::Null));
+                            let mut new_series = Series::new_empty(var, &DataType::Null);
+                            new_series.rename(var);
+                            series.push(new_series);
                         }
                         let out_lf = DataFrame::new(series).unwrap().lazy();
                         Ok(SolutionMappings::new(out_lf, out_columns, out_datatypes))

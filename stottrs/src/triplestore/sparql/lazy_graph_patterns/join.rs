@@ -60,7 +60,7 @@ impl Triplestore {
                         var,
                         dt_left.clone(),
                         dt,
-                        context.clone(),
+                        context.as_str().to_string(),
                     ));
                 }
             } else {
