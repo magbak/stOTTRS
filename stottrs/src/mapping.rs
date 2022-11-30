@@ -9,19 +9,21 @@ use crate::document::document_from_str;
 use crate::mapping::constant_terms::constant_to_expr;
 use crate::mapping::errors::MappingError;
 use crate::templates::TemplateDataset;
+use crate::triplestore::Triplestore;
+use oxrdf::vocab::xsd;
+use oxrdf::{NamedNode, NamedNodeRef, Triple};
 use polars::lazy::prelude::{col, Expr};
 use polars::prelude::{DataFrame, IntoLazy, LazyFrame, PolarsError};
+use rayon::iter::ParallelDrainRange;
+use rayon::iter::ParallelIterator;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::path::Path;
-use oxrdf::{NamedNode, NamedNodeRef, Triple};
-use oxrdf::vocab::xsd;
-use crate::triplestore::Triplestore;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
-    pub triplestore: Triplestore
+    pub triplestore: Triplestore,
 }
 
 pub struct ExpandOptions {
@@ -51,7 +53,7 @@ pub enum RDFNodeType {
 }
 
 impl RDFNodeType {
-    pub fn is_lit_type(&self, nnref:NamedNodeRef) -> bool {
+    pub fn is_lit_type(&self, nnref: NamedNodeRef) -> bool {
         if let RDFNodeType::Literal(l) = self {
             if l.as_ref() == nnref {
                 return true;
@@ -76,7 +78,7 @@ impl Mapping {
     pub fn new(template_dataset: &TemplateDataset) -> Mapping {
         Mapping {
             template_dataset: template_dataset.clone(),
-            triplestore: Triplestore::new()
+            triplestore: Triplestore::new(),
         }
     }
 
@@ -107,7 +109,9 @@ impl Mapping {
     }
 
     pub fn write_n_triples(&mut self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
-        self.triplestore.write_n_triples_all_dfs(buffer, 1024).unwrap();
+        self.triplestore
+            .write_n_triples_all_dfs(buffer, 1024)
+            .unwrap();
         Ok(())
     }
 
@@ -146,11 +150,8 @@ impl Mapping {
     ) -> Result<MappingReport, MappingError> {
         let target_template = self.resolve_template(template)?.clone();
         let target_template_name = target_template.signature.template_name.as_str().to_string();
-        let columns = self.validate_infer_dataframe_columns(
-            &target_template.signature,
-            &df,
-            &options
-        )?;
+        let columns =
+            self.validate_infer_dataframe_columns(&target_template.signature, &df, &options)?;
         let mut result_vec = vec![];
         self._expand(&target_template_name, df.lazy(), columns, &mut result_vec)?;
         self.process_results(result_vec);
@@ -197,13 +198,26 @@ impl Mapping {
         }
     }
 
-    fn process_results(&mut self, result_vec: Vec<(LazyFrame, HashMap<String, PrimitiveColumn>)>) {
-        for (lf, mut columns) in result_vec {
-            let df = lf.collect().expect("Collect problem");
-            let PrimitiveColumn{rdf_node_type, language_tag} = columns.remove("object").unwrap();
-            self.triplestore.add_triples(df, rdf_node_type, language_tag);
+    fn process_results(&mut self, mut result_vec: Vec<(LazyFrame, HashMap<String, PrimitiveColumn>)>) {
+        let triples: Vec<(DataFrame, RDFNodeType, Option<String>)> = result_vec
+            .par_drain(..)
+            .map(|(lf, columns)| create_triples(lf, columns))
+            .collect();
+        for (df, rdf_node_type, language_tag) in triples {
+            self.triplestore.add_triples(df, rdf_node_type, language_tag)
         }
     }
+}
+fn create_triples(
+    lf: LazyFrame,
+    mut columns: HashMap<String, PrimitiveColumn>,
+) -> (DataFrame, RDFNodeType, Option<String>) {
+    let df = lf.collect().expect("Collect problem");
+    let PrimitiveColumn {
+        rdf_node_type,
+        language_tag,
+    } = columns.remove("object").unwrap();
+    (df, rdf_node_type, language_tag)
 }
 
 fn create_remapped_lazy_frame(
@@ -237,17 +251,25 @@ fn create_remapped_lazy_frame(
             }
             StottrTerm::ConstantTerm(ct) => {
                 let (expr, _, rdf_node_type, language_tag) = constant_to_expr(ct, &target.ptype)?;
-                let mapped_column =
-                    PrimitiveColumn { rdf_node_type, language_tag };
+                let mapped_column = PrimitiveColumn {
+                    rdf_node_type,
+                    language_tag,
+                };
                 expressions.push(expr.alias(&target.stottr_variable.name));
                 new_map.insert(target.stottr_variable.name.clone(), mapped_column);
             }
-            StottrTerm::List(_) => {todo!()}
+            StottrTerm::List(_) => {
+                todo!()
+            }
         }
     }
 
     // TODO: Remove workaround likely bug in Pola.rs 0.25.1
-    lf = lf.rename(existing.as_slice(), new.as_slice()).collect().unwrap().lazy();
+    lf = lf
+        .rename(existing.as_slice(), new.as_slice())
+        .collect()
+        .unwrap()
+        .lazy();
 
     let new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
     lf = lf.select(new_column_expressions.as_slice());
@@ -274,4 +296,3 @@ fn create_remapped_lazy_frame(
     }
     Ok((lf, new_map))
 }
-
