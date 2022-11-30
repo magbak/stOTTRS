@@ -3,7 +3,7 @@ pub mod default;
 pub mod errors;
 mod validation_inference;
 
-use crate::ast::{Instance, ListExpanderType, Signature, StottrTerm, Template};
+use crate::ast::{ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm, Template};
 use crate::constants::OTTR_TRIPLE;
 use crate::document::document_from_str;
 use crate::mapping::constant_terms::constant_to_expr;
@@ -28,6 +28,18 @@ pub struct Mapping {
 
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
+}
+
+struct OTTRTripleInstance {
+    lf: LazyFrame,
+    dynamic_columns: HashMap<String, PrimitiveColumn>,
+    static_columns: HashMap<String, StaticColumn>,
+}
+
+#[derive(Clone)]
+struct StaticColumn {
+    constant_term: ConstantTerm,
+    ptype: Option<PType>,
 }
 
 impl Default for ExpandOptions {
@@ -153,7 +165,13 @@ impl Mapping {
         let columns =
             self.validate_infer_dataframe_columns(&target_template.signature, &df, &options)?;
         let mut result_vec = vec![];
-        self._expand(&target_template_name, df.lazy(), columns, &mut result_vec)?;
+        self._expand(
+            &target_template_name,
+            df.lazy(),
+            columns,
+            HashMap::new(),
+            &mut result_vec,
+        )?;
         self.process_results(result_vec);
 
         Ok(MappingReport {})
@@ -163,31 +181,37 @@ impl Mapping {
         &self,
         name: &str,
         mut lf: LazyFrame,
-        columns: HashMap<String, PrimitiveColumn>,
-        new_lfs_columns: &mut Vec<(LazyFrame, HashMap<String, PrimitiveColumn>)>,
+        dynamic_columns: HashMap<String, PrimitiveColumn>,
+        static_columns: HashMap<String, StaticColumn>,
+        new_lfs_columns: &mut Vec<OTTRTripleInstance>,
     ) -> Result<(), MappingError> {
         //At this point, the lf should have columns with names appropriate for the template to be instantiated (named_node).
         if let Some(template) = self.template_dataset.get(name) {
             if template.signature.template_name.as_str() == OTTR_TRIPLE {
-                let keep_cols = vec![col("subject"), col("verb"), col("object")];
-                lf = lf.select(keep_cols.as_slice());
-                new_lfs_columns.push((lf, columns));
+                new_lfs_columns.push(OTTRTripleInstance {
+                    lf,
+                    dynamic_columns,
+                    static_columns,
+                });
                 Ok(())
             } else {
                 for i in &template.pattern_list {
                     let target_template =
                         self.template_dataset.get(i.template_name.as_str()).unwrap();
-                    let (instance_lf, instance_columns) = create_remapped_lazy_frame(
-                        i,
-                        &target_template.signature,
-                        lf.clone(),
-                        &columns,
-                    )?;
+                    let (instance_lf, instance_dynamic_columns, instance_static_columns) =
+                        create_remapped(
+                            i,
+                            &target_template.signature,
+                            lf.clone(),
+                            &dynamic_columns,
+                            &static_columns,
+                        )?;
 
                     self._expand(
                         i.template_name.as_str(),
                         instance_lf,
-                        instance_columns,
+                        instance_dynamic_columns,
+                        instance_static_columns,
                         new_lfs_columns,
                     )?;
                 }
@@ -198,65 +222,132 @@ impl Mapping {
         }
     }
 
-    fn process_results(&mut self, mut result_vec: Vec<(LazyFrame, HashMap<String, PrimitiveColumn>)>) {
-        let triples: Vec<(DataFrame, RDFNodeType, Option<String>)> = result_vec
+    fn process_results(&mut self, mut result_vec: Vec<OTTRTripleInstance>) -> Result<(), MappingError> {
+        let triples: Vec<Result<(DataFrame, RDFNodeType, Option<String>, Option<String>), MappingError>> = result_vec
             .par_drain(..)
-            .map(|(lf, columns)| create_triples(lf, columns))
+            .map(|i| create_triples(i))
             .collect();
-        for (df, rdf_node_type, language_tag) in triples {
-            self.triplestore.add_triples(df, rdf_node_type, language_tag)
+        let mut ok_triples = vec![];
+        for t in triples {
+            ok_triples.push(t?);
         }
+        for (df, rdf_node_type, language_tag, verb) in ok_triples {
+            self.triplestore
+                .add_triples(df, rdf_node_type, language_tag, verb)
+        }
+        Ok(())
     }
 }
-fn create_triples(
-    lf: LazyFrame,
-    mut columns: HashMap<String, PrimitiveColumn>,
-) -> (DataFrame, RDFNodeType, Option<String>) {
+fn create_triples(i: OTTRTripleInstance) -> Result<(DataFrame, RDFNodeType, Option<String>, Option<String>), MappingError>{
+    let OTTRTripleInstance {
+        mut lf,
+        mut dynamic_columns,
+        static_columns,
+    } = i;
+
+    let mut expressions = vec![];
+
+    let mut verb = None;
+    for (k, sc) in static_columns {
+        if k == "verb" {
+            if let ConstantTerm::Constant(c) = &sc.constant_term {
+                if let ConstantLiteral::IRI(nn) = c {
+                    verb = Some(nn.as_str().to_string());
+                } else {
+                    return Err(MappingError::InvalidPredicateConstant(sc.constant_term.clone()))
+                }
+            } else {
+                return Err(MappingError::InvalidPredicateConstant(sc.constant_term.clone()))
+            }
+        } else {
+            let (expr, mapped_column) = create_dynamic_expression_from_static(&k, &sc.constant_term, &sc.ptype)?;
+            expressions.push(expr.alias(&k));
+            dynamic_columns.insert(k, mapped_column);
+        }
+    }
+
+    for e in expressions {
+        lf = lf.with_column(e);
+    }
+
+    let mut keep_cols = vec![col("subject"), col("object")];
+    if verb.is_none() {
+        keep_cols.push(col("verb"));
+    }
+    lf = lf.select(keep_cols.as_slice());
     let df = lf.collect().expect("Collect problem");
     let PrimitiveColumn {
         rdf_node_type,
         language_tag,
-    } = columns.remove("object").unwrap();
-    (df, rdf_node_type, language_tag)
+    } = dynamic_columns.remove("object").unwrap();
+    Ok((df, rdf_node_type, language_tag, verb))
 }
 
-fn create_remapped_lazy_frame(
+fn create_dynamic_expression_from_static(column_name:&str, constant_term: &ConstantTerm, ptype:&Option<PType>) -> Result<(Expr, PrimitiveColumn), MappingError>{
+    let (mut expr, _, rdf_node_type, language_tag) =
+            constant_to_expr(constant_term, ptype)?;
+    let mapped_column = PrimitiveColumn {
+        rdf_node_type,
+        language_tag,
+    };
+    expr = expr.alias(column_name);
+    Ok((expr, mapped_column))
+}
+
+fn create_remapped(
     instance: &Instance,
     signature: &Signature,
     mut lf: LazyFrame,
-    columns: &HashMap<String, PrimitiveColumn>,
-) -> Result<(LazyFrame, HashMap<String, PrimitiveColumn>), MappingError> {
-    let mut new_map = HashMap::new();
+    dynamic_columns: &HashMap<String, PrimitiveColumn>,
+    constant_columns: &HashMap<String, StaticColumn>,
+) -> Result<
+    (
+        LazyFrame,
+        HashMap<String, PrimitiveColumn>,
+        HashMap<String, StaticColumn>,
+    ),
+    MappingError,
+> {
+    let mut new_dynamic_columns = HashMap::new();
+    let mut new_constant_columns = HashMap::new();
     let mut existing = vec![];
     let mut new = vec![];
-    let mut expressions = vec![];
     let mut to_expand = vec![];
     for (original, target) in instance
         .argument_list
         .iter()
         .zip(signature.parameter_list.iter())
     {
+        let target_colname = &target.stottr_variable.name;
         if original.list_expand {
-            to_expand.push(target.stottr_variable.name.clone());
+            to_expand.push(target_colname.clone());
         }
         match &original.term {
             StottrTerm::Variable(v) => {
-                existing.push(v.name.clone());
-                new.push(target.stottr_variable.name.clone());
-                if let Some(c) = columns.get(&v.name) {
-                    new_map.insert(target.stottr_variable.name.clone(), c.clone());
+                if let Some(c) = dynamic_columns.get(&v.name) {
+                    existing.push(&v.name);
+                    new.push(target_colname);
+                    new_dynamic_columns.insert(target_colname.clone(), c.clone());
+                } else if let Some(c) = constant_columns.get(&v.name) {
+                    new_constant_columns.insert(target_colname.clone(), c.clone());
                 } else {
                     return Err(MappingError::UnknownVariableError(v.name.clone()));
                 }
             }
             StottrTerm::ConstantTerm(ct) => {
-                let (expr, _, rdf_node_type, language_tag) = constant_to_expr(ct, &target.ptype)?;
-                let mapped_column = PrimitiveColumn {
-                    rdf_node_type,
-                    language_tag,
-                };
-                expressions.push(expr.alias(&target.stottr_variable.name));
-                new_map.insert(target.stottr_variable.name.clone(), mapped_column);
+                if original.list_expand {
+                    let (expr, primitive_column) = create_dynamic_expression_from_static(target_colname, ct, &target.ptype)?;
+                    lf = lf.with_column(expr);
+                    new_dynamic_columns.insert(target_colname.clone(), primitive_column);
+                    new.push(target_colname);
+                } else {
+                    let static_column = StaticColumn {
+                        constant_term: ct.clone(),
+                        ptype: target.ptype.clone(),
+                    };
+                    new_constant_columns.insert(target_colname.clone(), static_column);
+                }
+
             }
             StottrTerm::List(_) => {
                 todo!()
@@ -274,9 +365,6 @@ fn create_remapped_lazy_frame(
     let new_column_expressions: Vec<Expr> = new.into_iter().map(|x| col(&x)).collect();
     lf = lf.select(new_column_expressions.as_slice());
 
-    for e in expressions {
-        lf = lf.with_column(e);
-    }
     if let Some(le) = &instance.list_expander {
         let to_expand_cols: Vec<Expr> = to_expand.iter().map(|x| col(x)).collect();
         match le {
@@ -293,6 +381,7 @@ fn create_remapped_lazy_frame(
                 lf = lf.explode(to_expand_cols);
             }
         }
+        //Todo: List expanders for constant terms..
     }
-    Ok((lf, new_map))
+    Ok((lf, new_dynamic_columns, new_constant_columns))
 }

@@ -97,7 +97,7 @@ impl Triplestore {
                 }
                 QueryResult::Construct(dfs) => {
                     for (df, dt) in dfs {
-                        self.add_triples(df, dt, None);
+                        self.add_triples(df, dt, None, None);
                     }
                     Ok(())
                 }

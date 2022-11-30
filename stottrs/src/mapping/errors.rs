@@ -1,4 +1,4 @@
-use crate::ast::{ConstantTerm, PType};
+use crate::ast::{ConstantLiteral, ConstantTerm, PType};
 use oxrdf::IriParseError;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, Series};
@@ -14,20 +14,17 @@ pub enum MappingError {
     KeyColumnContainsDuplicates(Series),
     KeyAndPathColumnOverlapsExisting(DataFrame),
     NonOptionalColumnHasNull(String, DataFrame),
-    InvalidKeyColumnDataType(DataType),
     NonBlankColumnHasBlankNode(String, Series),
     MissingParameterColumn(String),
     ContainsIrrelevantColumns(Vec<String>),
     CouldNotInferStottrDatatypeForColumn(String, DataType),
     ColumnDataTypeMismatch(String, DataType, PType),
+    InvalidPredicateConstant(ConstantTerm),
     PTypeNotSupported(String, PType),
     UnknownTimeZoneError(String),
     UnknownVariableError(String),
     ConstantDoesNotMatchDataType(ConstantTerm, PType, PType),
     ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
-    NoMintedIRIsForArgument(String, Vec<String>),
-    NoMintedIRIsForTemplate(String),
-    NoMintedIRIsForTemplateNameFromPrefix(String),
     NoTemplateForTemplateNameFromPrefix(String),
 }
 
@@ -51,13 +48,6 @@ impl Display for MappingError {
                     f,
                     "Column {} which is non-optional has null values for keys: {}",
                     col, nullkey
-                )
-            }
-            MappingError::InvalidKeyColumnDataType(dt) => {
-                write!(
-                    f,
-                    "Key column has invalid data type: {}, should be Utf8",
-                    dt
                 )
             }
             MappingError::NonBlankColumnHasBlankNode(col, blanks) => {
@@ -124,29 +114,18 @@ impl Display for MappingError {
                     expected_colname, colname
                 )
             }
-            MappingError::NoMintedIRIsForArgument(arg, existing_args) => {
-                write!(
-                    f,
-                    "Did not find argument {} among arguments with minted IRIs {}",
-                    arg,
-                    existing_args.join(",")
-                )
-            }
-            MappingError::NoMintedIRIsForTemplate(tmpl) => {
-                write!(f, "Could not find any minted IRIs for template {}", tmpl)
-            }
-            MappingError::NoMintedIRIsForTemplateNameFromPrefix(prefix) => {
-                write!(
-                    f,
-                    "Template {} inferred from prefix has no minted IRIs",
-                    prefix
-                )
-            }
             MappingError::NoTemplateForTemplateNameFromPrefix(prefix) => {
                 write!(
                     f,
                     "Template name {} inferred from prefix could not be found",
                     prefix
+                )
+            }
+            MappingError::InvalidPredicateConstant(constant_term) => {
+                write!(
+                    f,
+                    "Predicate constant {} is not valid, must be an IRI, e.g. prefix:predicate",
+                    constant_term,
                 )
             }
         }

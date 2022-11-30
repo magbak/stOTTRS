@@ -53,10 +53,11 @@ impl Triplestore {
         let mut any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
         let mut write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
 
-        for df in &mut self.get_mut_object_property_triples() {
+        for (verb, df) in self.get_mut_object_property_triples() {
             df.as_single_chunk_par();
             write_ntriples_for_df(
                 df,
+                verb,
                 &None,
                 writer,
                 chunk_size,
@@ -66,10 +67,11 @@ impl Triplestore {
                 &mut write_buffer_pool,
             )?;
         }
-        for df in &mut self.get_mut_string_property_triples() {
+        for (verb,df) in &mut self.get_mut_string_property_triples() {
             df.as_single_chunk_par();
             write_ntriples_for_df(
                 df,
+                verb,
                 &None,
                 writer,
                 chunk_size,
@@ -79,10 +81,11 @@ impl Triplestore {
                 &mut write_buffer_pool,
             )?;
         }
-        for (df, dt) in &mut self.get_mut_non_string_property_triples() {
+        for (verb, df, dt) in self.get_mut_non_string_property_triples() {
             df.as_single_chunk_par();
             write_ntriples_for_df(
                 df,
+                verb,
                 &Some(dt.clone()),
                 writer,
                 chunk_size,
@@ -99,6 +102,7 @@ impl Triplestore {
 
 fn write_ntriples_for_df<W: Write + ?Sized>(
     df: &DataFrame,
+    verb: &String,
     dt: &Option<NamedNode>,
     writer: &mut W,
     chunk_size: usize,
@@ -169,16 +173,17 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
                 if !any_values.is_empty() {
                     match triple_type {
                         TripleType::ObjectProperty => {
-                            write_object_property_triple(&mut write_buffer, any_values);
+                            write_object_property_triple(&mut write_buffer, any_values, verb);
                         }
                         TripleType::StringProperty => {
-                            write_string_property_triple(&mut write_buffer, any_values);
+                            write_string_property_triple(&mut write_buffer, any_values, verb);
                         }
                         TripleType::NonStringProperty => {
                             write_non_string_property_triple(
                                 &mut write_buffer,
                                 dt_str.unwrap(),
                                 any_values,
+                                verb
                             );
                         }
                     }
@@ -205,7 +210,7 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
     Ok(())
 }
 
-fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) {
+fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>, v:&str) {
     let lang_opt = if let AnyValue::Utf8(lang) = any_values.pop().unwrap() {
         Some(lang)
     } else {
@@ -213,11 +218,6 @@ fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) 
     };
     let lex = if let AnyValue::Utf8(lex) = any_values.pop().unwrap() {
         lex
-    } else {
-        panic!()
-    };
-    let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {
-        v
     } else {
         panic!()
     };
@@ -237,14 +237,9 @@ fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) 
 }
 
 //Assumes that the data has been bulk-converted
-fn write_non_string_property_triple(f: &mut Vec<u8>, dt: &str, mut any_values: Vec<AnyValue>) {
+fn write_non_string_property_triple(f: &mut Vec<u8>, dt: &str, mut any_values: Vec<AnyValue>, v:&str) {
     let lex = if let AnyValue::Utf8(lex) = any_values.pop().unwrap() {
         lex
-    } else {
-        panic!()
-    };
-    let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {
-        v
     } else {
         panic!()
     };
@@ -259,14 +254,9 @@ fn write_non_string_property_triple(f: &mut Vec<u8>, dt: &str, mut any_values: V
     writeln!(f, "^^<{}> .", dt).unwrap();
 }
 
-fn write_object_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>) {
+fn write_object_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>, v:&str) {
     let o = if let AnyValue::Utf8(o) = any_values.pop().unwrap() {
         o
-    } else {
-        panic!()
-    };
-    let v = if let AnyValue::Utf8(v) = any_values.pop().unwrap() {
-        v
     } else {
         panic!()
     };
