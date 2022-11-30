@@ -13,7 +13,7 @@ use stottrs::templates::TemplateDataset;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
 use pyo3::*;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::fs::File;
 use arrow_python_utils::to_python::{df_to_py_df, df_vec_to_py_df_list};
@@ -161,13 +161,15 @@ pub struct Mapping {
 
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
-    pub language_tags: Option<HashMap<String, String>>
+    pub language_tags: Option<HashMap<String, String>>,
+    pub unique_subsets: Option<Vec<Vec<String>>>
 }
 
 impl ExpandOptions {
     fn to_rust_expand_options(&self) -> RustExpandOptions {
         RustExpandOptions {
             language_tags: self.language_tags.clone(),
+            unique_subsets: self.unique_subsets.clone(),
         }
     }
 }
@@ -195,11 +197,18 @@ impl Mapping {
         &mut self,
         template: &str,
         df: &PyAny,
+        unique_subset: Option<Vec<String>>,
         language_tags: Option<HashMap<String, String>>,
     ) -> PyResult<Option<PyObject>> {
         let df = polars_df_to_rust_df(&df)?;
+        let unique_subsets = if let Some(unique_subset) = unique_subset {
+            Some(vec![unique_subset.into_iter().collect()])
+        } else {
+            None
+        };
         let options = ExpandOptions {
-            language_tags
+            language_tags,
+            unique_subsets
         };
 
         let mut _report = self
@@ -221,7 +230,8 @@ impl Mapping {
     ) -> PyResult<String> {
         let df = polars_df_to_rust_df(&df)?;
         let options = ExpandOptions {
-            language_tags
+            language_tags,
+            unique_subsets:Some(vec![vec![primary_key_column.clone()]])
         };
 
         let fk_cols = if let Some(fk_cols) = foreign_key_columns {

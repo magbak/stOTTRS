@@ -1,4 +1,4 @@
-use crate::ast::{ConstantLiteral, ConstantTerm, PType};
+use crate::ast::{ConstantTerm, PType};
 use oxrdf::IriParseError;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, Series};

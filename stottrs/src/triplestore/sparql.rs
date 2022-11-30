@@ -22,6 +22,7 @@ use polars_core::prelude::{DataType, Series, UniqueKeepStrategy};
 use polars_core::toggle_string_cache;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
+use crate::triplestore::TriplesToAdd;
 
 pub enum QueryResult {
     Select(DataFrame),
@@ -96,9 +97,17 @@ impl Triplestore {
                     panic!("Should never happen")
                 }
                 QueryResult::Construct(dfs) => {
+                    let mut all_triples_to_add = vec![];
                     for (df, dt) in dfs {
-                        self.add_triples(df, dt, None, None);
+                        all_triples_to_add.push(TriplesToAdd{
+                            df,
+                            object_type:dt,
+                            language_tag: None,
+                            static_verb_column: None,
+                            has_unique_subset:false
+                        });
                     }
+                    self.add_triples_vec(all_triples_to_add);
                     Ok(())
                 }
             }

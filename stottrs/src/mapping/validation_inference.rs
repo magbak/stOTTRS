@@ -197,6 +197,7 @@ pub fn polars_datatype_to_xsd_datatype(datatype: &DataType) -> PType {
         DataType::Datetime(_, Some(_)) => xsd::DATE_TIME_STAMP,
         DataType::Datetime(_, None) => xsd::DATE_TIME,
         DataType::Duration(_) => xsd::DURATION,
+        DataType::Categorical(_) => xsd::STRING,
         DataType::List(inner) => {
             return PType::ListType(Box::new(polars_datatype_to_xsd_datatype(inner)))
         }
