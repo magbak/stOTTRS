@@ -1,4 +1,5 @@
 from .stottrs import Mapping
+import logging
 try:
     import rdflib
     from .functions import to_graph
