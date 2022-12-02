@@ -1,5 +1,5 @@
 import polars as pl
-from stottrs import Mapping
+from stottrs import Mapping, to_graph
 
 def test_create_mapping_from_polars_df():
     doc = """
