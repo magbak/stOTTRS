@@ -1,6 +1,6 @@
 [project]
 name = "stottrs"
-dependencies = ["rdflib==6.2.0", "polars==0.14.21", "pyarrow>=4.0.*"]
+dependencies = ["polars==0.14.21", "pyarrow>=4.0.*"]
 
 [build-system]
 requires = ["maturin>=0.13,<0.14"]

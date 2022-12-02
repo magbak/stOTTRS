@@ -2,7 +2,7 @@ mod ntriples_write;
 mod export_triples;
 pub(crate) mod conversion;
 pub mod sparql;
-mod formatted_parquet_write;
+pub mod native_parquet_write;
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -22,7 +22,12 @@ const LANGUAGE_TAG_COLUMN:&str = "language_tag";
 
 pub struct Triplestore {
     deduplicated: bool,
-    df_map: HashMap<String, HashMap<RDFNodeType, Vec<DataFrame>>>
+    df_map: HashMap<String, HashMap<RDFNodeType, TripleTable>>
+}
+
+pub struct TripleTable {
+    dfs: Vec<DataFrame>,
+    unique: bool
 }
 
 #[derive(PartialEq)]
@@ -43,7 +48,7 @@ pub struct TriplesToAdd {
 pub struct TripleDF {
     df:DataFrame,
     predicate:String,
-    object_type:RDFNodeType
+    object_type:RDFNodeType,
 }
 
 impl Triplestore {
@@ -52,17 +57,20 @@ impl Triplestore {
     }
 
     pub fn deduplicate(&mut self) {
+        let now = Instant::now();
         for (_,map) in &mut self.df_map {
             for (_,v) in map {
-                if v.len() > 0 {
-                    let drained: Vec<LazyFrame> = v.drain(0..v.len()).map(|x|x.lazy()).collect();
+                if !v.unique {
+                    let drained: Vec<LazyFrame> = v.dfs.drain(..).map(|x|x.lazy()).collect();
                     let mut lf = concat(drained.as_slice(), true, true).unwrap();
                     lf = lf.unique(None, UniqueKeepStrategy::First);
-                    v.push(lf.collect().unwrap());
+                    v.dfs.push(lf.collect().unwrap());
+                    v.unique = true;
                 }
             }
         }
         self.deduplicated = true;
+        debug!("Deduplication took {} seconds", now.elapsed().as_secs_f64());
     }
 
     pub fn add_triples_vec(&mut self, mut ts: Vec<TriplesToAdd>) {
@@ -78,26 +86,27 @@ impl Triplestore {
         }
     }
 
-
     fn add_triples_df(&mut self, df:DataFrame, predicate:String, object_type:RDFNodeType) {
+        //Safe to assume everything is unique
         if let Some(m) = self.df_map.get_mut(&predicate) {
             if let Some(v) = m.get_mut(&object_type) {
                 self.deduplicated = false;
-                v.push(df);
+                v.dfs.push(df);
+                v.unique = false;
             } else {
-                m.insert(object_type, vec![df]);
+                m.insert(object_type, TripleTable{ dfs: vec![df], unique: true } );
             }
         } else {
-            self.df_map.insert(predicate,HashMap::from([(object_type, vec![df])]));
+            self.df_map.insert(predicate,HashMap::from([(object_type, TripleTable{ dfs: vec![df], unique: true })]));
         }
     }
 
     fn get_object_property_triples(&self) -> Vec<(&String, &DataFrame)> {
         let mut df_vec = vec![];
         for (verb,map) in &self.df_map {
-            for (k,dfs) in map {
+            for (k,tt) in map {
                 if let &RDFNodeType::IRI = k {
-                    for df in dfs {
+                    for df in &tt.dfs {
                             df_vec.push((verb, df))
                         }
                 }
@@ -109,9 +118,9 @@ impl Triplestore {
     fn get_mut_object_property_triples(&mut self) -> Vec<(&String, &mut DataFrame)> {
         let mut df_vec = vec![];
         for (verb,map) in &mut self.df_map {
-            for (k,dfs) in map {
+            for (k,tt) in map {
                 if let &RDFNodeType::IRI = k {
-                    for df in dfs {
+                    for df in &mut tt.dfs {
                             df_vec.push((verb, df))
                         }
                 }
@@ -123,10 +132,10 @@ impl Triplestore {
     fn get_string_property_triples(&self) -> Vec<(&String, &DataFrame)> {
         let mut df_vec = vec![];
         for (verb,map) in &self.df_map {
-            for (k,dfs) in map {
+            for (k,tt) in map {
                 if let RDFNodeType::Literal(lit) = k {
                     if lit.as_ref() == xsd::STRING {
-                        for df in dfs {
+                        for df in &tt.dfs {
                             df_vec.push((verb, df))
                         }
                     }
@@ -139,10 +148,10 @@ impl Triplestore {
     fn get_mut_string_property_triples(&mut self) -> Vec<(&String, &mut DataFrame)> {
         let mut df_vec = vec![];
         for (verb,map) in &mut self.df_map {
-            for (k,dfs) in map {
+            for (k,tt) in map {
                 if let RDFNodeType::Literal(lit) = k {
                     if lit.as_ref() == xsd::STRING {
-                        for df in dfs {
+                        for df in &mut tt.dfs {
                             df_vec.push((verb, df))
                         }
                     }
@@ -155,10 +164,10 @@ impl Triplestore {
     fn get_non_string_property_triples(&self) -> Vec<(&String, &DataFrame, &NamedNode)> {
         let mut df_dts_vec = vec![];
         for (verb,map) in &self.df_map {
-            for (k,dfs) in map {
+            for (k,tt) in map {
                 if let RDFNodeType::Literal(lit) = k {
                     if lit.as_ref() != xsd::STRING {
-                        for df in dfs {
+                        for df in &tt.dfs {
                             df_dts_vec.push((verb, df, lit))
                         }
                     }
@@ -171,10 +180,10 @@ impl Triplestore {
     fn get_mut_non_string_property_triples(&mut self) -> Vec<(&String, &mut DataFrame, &NamedNode)> {
         let mut df_dts_vec = vec![];
         for (verb,map) in &mut self.df_map {
-            for (k,dfs) in map {
+            for (k,tt) in map {
                 if let RDFNodeType::Literal(lit) = k {
                     if lit.as_ref() != xsd::STRING {
-                        for df in dfs {
+                        for df in &mut tt.dfs {
                             df_dts_vec.push((verb, df, lit))
                         }
                     }

@@ -13,7 +13,7 @@ use stottrs::templates::TemplateDataset;
 use pyo3::basic::CompareOp;
 use pyo3::prelude::PyModule;
 use pyo3::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap};
 use std::path::PathBuf;
 use std::fs::File;
 use arrow_python_utils::to_python::{df_to_py_df, df_vec_to_py_df_list};
@@ -253,9 +253,9 @@ impl Mapping {
     }
 
     pub fn query(&mut self, py: Python<'_>, query:String) -> PyResult<PyObject> {
-        let mut res = self.inner.triplestore.query(&query).map_err(PyMapperError::from)?;
+        let res = self.inner.triplestore.query(&query).map_err(PyMapperError::from)?;
         match res {
-            QueryResult::Select(mut df) => {
+            QueryResult::Select(df) => {
                 df_to_py_df(df, py)
             }
             QueryResult::Construct(dfs) => {
@@ -265,7 +265,7 @@ impl Mapping {
         }
     }
 
-    pub fn construct_update(&mut self, py: Python<'_>, query:String) -> PyResult<()> {
+    pub fn construct_update(&mut self, query:String) -> PyResult<()> {
         self.inner.triplestore.construct_update(&query).map_err(PyMapperError::from)?;
         Ok(())
     }
@@ -390,6 +390,11 @@ impl Mapping {
         let path_buf = PathBuf::from(path);
         let mut actual_file = File::create(path_buf.as_path()).map_err(|x|PyMapperError::IOError(x))?;
         self.inner.write_n_triples(&mut actual_file).unwrap();
+        Ok(())
+    }
+
+    pub fn write_native_parquet(&mut self, path:&str) -> PyResult<()> {
+        self.inner.write_native_parquet(path).map_err(|x|PyMapperError::MapperError(x))?;
         Ok(())
     }
 }

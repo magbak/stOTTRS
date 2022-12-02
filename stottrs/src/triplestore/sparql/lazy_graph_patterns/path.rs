@@ -267,9 +267,10 @@ impl Triplestore {
             } else if m.len() > 1 {
                 todo!("Multiple datatypes not supported yet")
             } else {
-                let (dt, dfs) = m.iter().next().unwrap();
-                assert_eq!(dfs.len(), 1, "Should be deduplicated");
-                let mut lf = dfs.get(0).unwrap().clone().lazy(); //TODO: Inefficiency here with clone.. should filter on subject / object term before cloning.
+                let (dt, tt) = m.iter().next().unwrap();
+                assert!(tt.unique, "Should be deduplicated");
+                assert_eq!(tt.dfs.len(), 1, "No support for many dfs yet..");
+                let mut lf = tt.dfs.get(0).unwrap().clone().lazy(); //TODO: Inefficiency here with clone.. should filter on subject / object term before cloning.
                 if let Some(subject) = subject {
                     if let TermPattern::NamedNode(nn) = subject {
                         lf = lf.filter(

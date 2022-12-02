@@ -31,9 +31,10 @@ impl Triplestore {
                     } else if m.len() > 1 {
                         todo!("Multiple datatypes not supported yet")
                     } else {
-                        let (dt, dfs) = m.iter().next().unwrap();
-                        assert_eq!(dfs.len(), 1, "Should be deduplicated");
-                        let df = dfs.get(0).unwrap();
+                        let (dt, tt) = m.iter().next().unwrap();
+                        assert!(tt.unique, "Should be deduplicated");
+                        assert_eq!(tt.dfs.len(), 1, "No support for multiple dfs yet");
+                        let df = tt.dfs.get(0).unwrap();
                         let mut lf = df.clone().lazy().select([col("subject"), col("object")]);
                         let mut var_cols = vec![];
                         let mut str_cols = vec![];

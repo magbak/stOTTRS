@@ -23,10 +23,10 @@ use rayon::iter::{ParallelDrainRange};
 use std::collections::{HashMap};
 use std::error::Error;
 use std::io::Write;
-use std::ops::Index;
 use std::path::Path;
 use std::time::Instant;
 use log::{debug};
+use crate::errors::MapperError;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -138,6 +138,10 @@ impl Mapping {
             .write_n_triples_all_dfs(buffer, 1024)
             .unwrap();
         Ok(())
+    }
+
+    pub fn write_native_parquet(&mut self, path:&str) -> Result<(), MapperError> {
+        self.triplestore.write_native_parquet(Path::new(path)).map_err(|x|MapperError::MappingError(x))
     }
 
     pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {

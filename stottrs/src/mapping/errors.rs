@@ -3,6 +3,8 @@ use oxrdf::IriParseError;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{DataType, Series};
 use std::fmt::{Display, Formatter};
+use std::io;
+use polars_core::error::PolarsError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -26,6 +28,10 @@ pub enum MappingError {
     ConstantDoesNotMatchDataType(ConstantTerm, PType, PType),
     ConstantListHasInconsistentPType(ConstantTerm, PType, PType),
     NoTemplateForTemplateNameFromPrefix(String),
+    FileCreateIOError(io::Error),
+    FolderCreateIOError(io::Error),
+    WriteParquetError(PolarsError),
+    PathDoesNotExist(String)
 }
 
 impl Display for MappingError {
@@ -127,6 +133,19 @@ impl Display for MappingError {
                     "Predicate constant {} is not valid, must be an IRI, e.g. prefix:predicate",
                     constant_term,
                 )
+            }
+
+            MappingError::FileCreateIOError(e) => {
+                write!(f, "Creating file for parquet writing resulted in an error: {}", e)
+            }
+            MappingError::WriteParquetError(e) => {
+                write!(f, "Writing to parquet file produced an error {:?}", e)
+            }
+            MappingError::FolderCreateIOError(e) => {
+                write!(f, "Creating folder resulted in an error: {}", e)
+            }
+            MappingError::PathDoesNotExist(p) => {
+                write!(f, "Path {} does not exist", p)
             }
         }
     }
