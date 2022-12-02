@@ -1,5 +1,10 @@
+import logging
+
 from .stottrs import Mapping
-from rdflib import Graph, URIRef, Literal, BNode
+try:
+    from rdflib import Graph, URIRef, Literal, BNode
+except ImportError:
+    logging.debug("RDFLib not found, install it to use the function to_graph")
 
 def to_graph(m:Mapping) -> Graph:
     g = Graph()
