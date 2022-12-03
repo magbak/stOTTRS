@@ -3,30 +3,33 @@ pub mod default;
 pub mod errors;
 mod validation_inference;
 
+use std::cmp::min;
 use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
     Template,
 };
 use crate::constants::OTTR_TRIPLE;
 use crate::document::document_from_str;
+use crate::errors::MapperError;
+use crate::io_funcs::create_folder_if_not_exists;
 use crate::mapping::constant_terms::constant_to_expr;
 use crate::mapping::errors::MappingError;
 use crate::templates::TemplateDataset;
 use crate::triplestore::{TriplesToAdd, Triplestore};
+use log::debug;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, NamedNodeRef, Triple};
 use polars::lazy::prelude::{col, Expr};
 use polars::prelude::{DataFrame, IntoLazy, PolarsError};
 use polars_core::series::Series;
+use rayon::iter::ParallelDrainRange;
 use rayon::iter::ParallelIterator;
-use rayon::iter::{ParallelDrainRange};
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::path::Path;
 use std::time::Instant;
-use log::{debug};
-use crate::errors::MapperError;
+use uuid::Uuid;
 
 pub struct Mapping {
     template_dataset: TemplateDataset,
@@ -35,7 +38,7 @@ pub struct Mapping {
 
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
-    pub unique_subsets: Option<Vec<Vec<String>>>
+    pub unique_subsets: Option<Vec<Vec<String>>>,
 }
 
 struct OTTRTripleInstance {
@@ -97,40 +100,40 @@ impl RDFNodeType {
 pub struct MappingReport {}
 
 impl Mapping {
-    pub fn new(template_dataset: &TemplateDataset) -> Mapping {
+    pub fn new(template_dataset: &TemplateDataset, caching_folder:Option<String>) -> Mapping {
         match env_logger::try_init() {
-           _ => {}
+            _ => {}
         }
         Mapping {
             template_dataset: template_dataset.clone(),
-            triplestore: Triplestore::new(),
+            triplestore: Triplestore::new(caching_folder),
         }
     }
 
-    pub fn from_folder<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_folder<P: AsRef<Path>>(path: P, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
         let dataset = TemplateDataset::from_folder(path)?;
-        Ok(Mapping::new(&dataset))
+        Ok(Mapping::new(&dataset, caching_folder))
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_file<P: AsRef<Path>>(path: P, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
         let dataset = TemplateDataset::from_file(path)?;
-        Ok(Mapping::new(&dataset))
+        Ok(Mapping::new(&dataset, caching_folder))
     }
 
-    pub fn from_str(s: &str) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_str(s: &str, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
         let doc = document_from_str(s.into())?;
         let dataset = TemplateDataset::new(vec![doc])?;
-        Ok(Mapping::new(&dataset))
+        Ok(Mapping::new(&dataset, caching_folder))
     }
 
-    pub fn from_strs(ss: Vec<&str>) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_strs(ss: Vec<&str>, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
         let mut docs = vec![];
         for s in ss {
             let doc = document_from_str(s.into())?;
             docs.push(doc);
         }
         let dataset = TemplateDataset::new(docs)?;
-        Ok(Mapping::new(&dataset))
+        Ok(Mapping::new(&dataset, caching_folder))
     }
 
     pub fn write_n_triples(&mut self, buffer: &mut dyn Write) -> Result<(), PolarsError> {
@@ -140,8 +143,10 @@ impl Mapping {
         Ok(())
     }
 
-    pub fn write_native_parquet(&mut self, path:&str) -> Result<(), MapperError> {
-        self.triplestore.write_native_parquet(Path::new(path)).map_err(|x|MapperError::MappingError(x))
+    pub fn write_native_parquet(&mut self, path: &str) -> Result<(), MapperError> {
+        self.triplestore
+            .write_native_parquet(Path::new(path))
+            .map_err(|x| MapperError::MappingError(x))
     }
 
     pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {
@@ -182,15 +187,51 @@ impl Mapping {
         let target_template_name = target_template.signature.template_name.as_str().to_string();
         let columns =
             self.validate_infer_dataframe_columns(&target_template.signature, &df, &options)?;
-        let ExpandOptions{ language_tags:_, unique_subsets:unique_subsets_opt } = options;
+        let ExpandOptions {
+            language_tags: _,
+            unique_subsets: unique_subsets_opt,
+        } = options;
         let unique_subsets = if let Some(unique_subsets) = unique_subsets_opt {
             unique_subsets
         } else {
             vec![]
         };
-        let result_vec = self._expand(&target_template_name, df, columns, HashMap::new(), unique_subsets)?;
-        self.process_results(result_vec)?;
-        debug!("Expansion took {} seconds", now.elapsed().as_secs_f32());
+        let call_uuid = Uuid::new_v4().to_string();
+
+        if let Some(caching_folder) = &self.caching_folder {
+            create_folder_if_not_exists(Path::new(&caching_folder))?;
+            let n_50_mb = (df.estimated_size() / 50_000_000) + 1;
+            let chunk_size = df.height() / n_50_mb;
+            let mut offset = 0i64;
+            loop {
+                let now = Instant::now();
+                let to_row = min(df.height(), offset as usize + chunk_size);
+                let df_slice = df.slice_par(offset, to_row);
+                offset += chunk_size as i64;
+                let result_vec = self._expand(
+                    &target_template_name,
+                    df_slice,
+                    columns.clone(),
+                    HashMap::new(),
+                    unique_subsets.clone(),
+                )?;
+                self.process_results(result_vec, &call_uuid)?;
+                debug!("Finished processing {} rows", to_row);
+                if offset >= df.height() as i64 {
+                    break;
+                }
+            }
+        } else {
+            let result_vec = self._expand(
+                &target_template_name,
+                df,
+                columns,
+                HashMap::new(),
+                unique_subsets,
+            )?;
+            self.process_results(result_vec, &call_uuid)?;
+            debug!("Expansion took {} seconds", now.elapsed().as_secs_f32());
+        }
         Ok(MappingReport {})
     }
 
@@ -209,7 +250,7 @@ impl Mapping {
                     df,
                     dynamic_columns,
                     static_columns,
-                    has_unique_subset:!unique_subsets.is_empty()
+                    has_unique_subset: !unique_subsets.is_empty(),
                 }])
             } else {
                 let mut series_map: HashMap<String, Series> = df
@@ -219,16 +260,21 @@ impl Mapping {
                     .collect();
                 let number_of_series_map =
                     get_number_per_series_map(&template.pattern_list, &dynamic_columns);
-                let mut series_keys:Vec<&String> = number_of_series_map.keys().collect();
+                let mut series_keys: Vec<&String> = number_of_series_map.keys().collect();
                 series_keys.sort();
 
                 let now = Instant::now();
                 let mut repeated_series_names = vec![];
                 for k in &series_keys {
-                    repeated_series_names.extend([*k].repeat(*number_of_series_map.get(*k).unwrap() as usize))
+                    repeated_series_names
+                        .extend([*k].repeat(*number_of_series_map.get(*k).unwrap() as usize))
                 }
-                let repeated_series_clones:Vec<(&String, Series)> = repeated_series_names.par_drain(..).map(|x| {(x, series_map.get(x).unwrap().clone())}).collect();
-                let mut cloned_series_map: HashMap<&String, Vec<Series>> = HashMap::from_iter(series_keys.into_iter().map(|x|(x,vec![])));
+                let repeated_series_clones: Vec<(&String, Series)> = repeated_series_names
+                    .par_drain(..)
+                    .map(|x| (x, series_map.get(x).unwrap().clone()))
+                    .collect();
+                let mut cloned_series_map: HashMap<&String, Vec<Series>> =
+                    HashMap::from_iter(series_keys.into_iter().map(|x| (x, vec![])));
                 for (k, ser) in repeated_series_clones {
                     cloned_series_map.get_mut(&k).unwrap().push(ser);
                 }
@@ -237,7 +283,7 @@ impl Mapping {
                     let mut instance_series = vec![];
                     let vs = get_variable_names(i);
                     for v in vs {
-                        let mut found =false;
+                        let mut found = false;
                         if let Some(series_vec) = cloned_series_map.get_mut(v) {
                             if let Some(series) = series_vec.pop() {
                                 instance_series.push(series);
@@ -255,18 +301,22 @@ impl Mapping {
 
                 let results: Vec<Result<Vec<OTTRTripleInstance>, MappingError>> = expand_params_vec
                     .par_drain(..)
-                    .map(|(i,df)| {
+                    .map(|(i, df)| {
                         let target_template =
                             self.template_dataset.get(i.template_name.as_str()).unwrap();
-                        let (instance_df, instance_dynamic_columns, instance_static_columns, new_unique_subsets) =
-                            create_remapped(
-                                i,
-                                &target_template.signature,
-                                df,
-                                &dynamic_columns,
-                                &static_columns,
-                                &unique_subsets
-                            )?;
+                        let (
+                            instance_df,
+                            instance_dynamic_columns,
+                            instance_static_columns,
+                            new_unique_subsets,
+                        ) = create_remapped(
+                            i,
+                            &target_template.signature,
+                            df,
+                            &dynamic_columns,
+                            &static_columns,
+                            &unique_subsets,
+                        )?;
 
                         self._expand(
                             i.template_name.as_str(),
@@ -292,6 +342,7 @@ impl Mapping {
     fn process_results(
         &mut self,
         mut result_vec: Vec<OTTRTripleInstance>,
+        call_uuid: &String
     ) -> Result<(), MappingError> {
         let now = Instant::now();
         let triples: Vec<
@@ -306,17 +357,20 @@ impl Mapping {
         }
         let mut all_triples_to_add = vec![];
         for (df, rdf_node_type, language_tag, verb, has_unique_subset) in ok_triples {
-            all_triples_to_add.push(TriplesToAdd{
+            all_triples_to_add.push(TriplesToAdd {
                 df,
                 object_type: rdf_node_type,
                 language_tag,
                 static_verb_column: verb,
-                has_unique_subset
+                has_unique_subset,
             });
         }
-        self.triplestore.add_triples_vec(all_triples_to_add);
+        self.triplestore.add_triples_vec(all_triples_to_add, call_uuid);
 
-        debug!("Result processing took {} seconds", now.elapsed().as_secs_f32());
+        debug!(
+            "Result processing took {} seconds",
+            now.elapsed().as_secs_f32()
+        );
         Ok(())
     }
 }
@@ -354,7 +408,7 @@ fn create_triples(
         df,
         mut dynamic_columns,
         static_columns,
-        has_unique_subset
+        has_unique_subset,
     } = i;
 
     let mut expressions = vec![];
@@ -426,7 +480,7 @@ fn create_remapped(
         DataFrame,
         HashMap<String, PrimitiveColumn>,
         HashMap<String, StaticColumn>,
-        Vec<Vec<String>>
+        Vec<Vec<String>>,
     ),
     MappingError,
 > {
@@ -491,7 +545,11 @@ fn create_remapped(
     for expr in expressions {
         lf = lf.with_column(expr);
     }
-    let new_column_expressions: Vec<Expr> = new.iter().chain(new_dynamic_from_constant.iter()).map(|x| col(x)).collect();
+    let new_column_expressions: Vec<Expr> = new
+        .iter()
+        .chain(new_dynamic_from_constant.iter())
+        .map(|x| col(x))
+        .collect();
     lf = lf.select(new_column_expressions.as_slice());
 
     let mut new_unique_subsets = vec![];
@@ -514,22 +572,29 @@ fn create_remapped(
         //Todo: List expanders for constant terms..
     } else {
         for unique_subset in unique_subsets {
-            if unique_subset.iter().all(|x|existing.contains(&x)) {
+            if unique_subset.iter().all(|x| existing.contains(&x)) {
                 let mut new_subset = vec![];
                 for x in unique_subset.iter() {
-                    new_subset.push(new.get(existing.iter().position(|e|e==&x).unwrap()).unwrap().to_string());
+                    new_subset.push(
+                        new.get(existing.iter().position(|e| e == &x).unwrap())
+                            .unwrap()
+                            .to_string(),
+                    );
                 }
                 new_unique_subsets.push(new_subset);
             }
         }
     }
     let df = lf.collect().unwrap();
-    debug!("Creating remapped took {} seconds", now.elapsed().as_secs_f32());
+    debug!(
+        "Creating remapped took {} seconds",
+        now.elapsed().as_secs_f32()
+    );
     Ok((
         df,
         new_dynamic_columns,
         new_constant_columns,
-        new_unique_subsets
+        new_unique_subsets,
     ))
 }
 

@@ -22,6 +22,7 @@ use polars_core::prelude::{DataType, Series, UniqueKeepStrategy};
 use polars_core::toggle_string_cache;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
+use uuid::Uuid;
 use crate::triplestore::TriplesToAdd;
 
 pub enum QueryResult {
@@ -89,6 +90,7 @@ impl Triplestore {
     }
 
     pub fn construct_update(&mut self, query: &str) -> Result<(), SparqlError> {
+        let call_uuid = Uuid::new_v4().to_string();
         let query = Query::parse(query, None).map_err(|x| SparqlError::ParseError(x))?;
         if let Query::Construct { .. } = &query {
             let res = self.query_parsed(&query)?;
@@ -107,7 +109,7 @@ impl Triplestore {
                             has_unique_subset:false
                         });
                     }
-                    self.add_triples_vec(all_triples_to_add);
+                    self.add_triples_vec(all_triples_to_add, &call_uuid);
                     Ok(())
                 }
             }

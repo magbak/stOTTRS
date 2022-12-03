@@ -162,14 +162,16 @@ pub struct Mapping {
 #[derive(Debug, Clone)]
 pub struct ExpandOptions {
     pub language_tags: Option<HashMap<String, String>>,
-    pub unique_subsets: Option<Vec<Vec<String>>>
+    pub unique_subsets: Option<Vec<Vec<String>>>,
+    pub caching_folder: Option<String>
 }
 
 impl ExpandOptions {
-    fn to_rust_expand_options(&self) -> RustExpandOptions {
+    fn to_rust_expand_options(self) -> RustExpandOptions {
         RustExpandOptions {
-            language_tags: self.language_tags.clone(),
-            unique_subsets: self.unique_subsets.clone(),
+            language_tags: self.language_tags,
+            unique_subsets: self.unique_subsets,
+            caching_folder: self.caching_folder,
         }
     }
 }
@@ -199,6 +201,7 @@ impl Mapping {
         df: &PyAny,
         unique_subset: Option<Vec<String>>,
         language_tags: Option<HashMap<String, String>>,
+        caching_folder: Option<String>
     ) -> PyResult<Option<PyObject>> {
         let df = polars_df_to_rust_df(&df)?;
         let unique_subsets = if let Some(unique_subset) = unique_subset {
@@ -208,7 +211,8 @@ impl Mapping {
         };
         let options = ExpandOptions {
             language_tags,
-            unique_subsets
+            unique_subsets,
+            caching_folder
         };
 
         let mut _report = self
@@ -227,11 +231,13 @@ impl Mapping {
         template_prefix: Option<String>,
         predicate_uri_prefix: Option<String>,
         language_tags: Option<HashMap<String, String>>,
+        caching_folder: Option<String>
     ) -> PyResult<String> {
         let df = polars_df_to_rust_df(&df)?;
         let options = ExpandOptions {
             language_tags,
-            unique_subsets:Some(vec![vec![primary_key_column.clone()]])
+            unique_subsets:Some(vec![vec![primary_key_column.clone()]]),
+            caching_folder,
         };
 
         let fk_cols = if let Some(fk_cols) = foreign_key_columns {

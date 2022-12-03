@@ -22,3 +22,4 @@ pub mod mapping;
 pub mod templates;
 pub mod triplestore;
 pub(crate) mod literals;
+pub(crate) mod io_funcs;
