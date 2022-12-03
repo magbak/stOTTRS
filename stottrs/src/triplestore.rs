@@ -26,7 +26,7 @@ const LANGUAGE_TAG_COLUMN: &str = "language_tag";
 
 pub struct Triplestore {
     deduplicated: bool,
-    caching_folder: Option<String>,
+    pub(crate) caching_folder: Option<String>,
     df_map: HashMap<String, HashMap<RDFNodeType, TripleTable>>,
 }
 
@@ -37,7 +37,7 @@ pub struct TripleTable {
     call_uuid: String,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 enum TripleType {
     ObjectProperty,
     StringProperty,
@@ -118,7 +118,7 @@ impl Triplestore {
     }
 
     fn add_triples_df_with_folder(&mut self, triples_df: Vec<TripleDF>, call_uuid: &String) {
-        let folder_path = Path::new(folder);
+        let folder_path = Path::new(self.caching_folder.as_ref().unwrap());
         let file_paths: Vec<(Path, Result<_, _>, String, RDFNodeType)> = triples_df
             .par_drain(..)
             .map(|tdf| {

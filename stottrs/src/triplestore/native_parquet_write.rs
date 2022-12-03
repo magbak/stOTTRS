@@ -1,11 +1,7 @@
-use std::fs::{create_dir, File};
 use super::Triplestore;
-use nom::InputIter;
 use std::path::Path;
 use std::time::Instant;
 use log::debug;
-use polars::prelude::ParquetWriter;
-use polars_core::frame::DataFrame;
 use rayon::iter::ParallelDrainRange;
 use rayon::iter::ParallelIterator;
 use crate::mapping::errors::MappingError;
@@ -40,12 +36,15 @@ impl Triplestore {
                     )
                 }
                 let mut file_path = path_buf.clone();
-                for (i, df) in tt.dfs.iter_mut().enumerate() {
-                    let filename = format!("{filename}_part_{i}.parquet");
-                    let mut file_path = file_path.clone();
-                    file_path.push(filename);
-                    dfs_to_write.push((df, file_path));
+                if let Some(caching_folder) = &self.caching_folder{ } else {
+                    for (i, df) in tt.dfs.unwrap().iter_mut().enumerate() {
+                        let filename = format!("{filename}_part_{i}.parquet");
+                        let mut file_path = file_path.clone();
+                        file_path.push(filename);
+                        dfs_to_write.push((df, file_path));
+                    }
                 }
+
             }
         }
 

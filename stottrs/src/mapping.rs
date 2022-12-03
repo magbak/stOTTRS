@@ -198,7 +198,7 @@ impl Mapping {
         };
         let call_uuid = Uuid::new_v4().to_string();
 
-        if let Some(caching_folder) = &self.caching_folder {
+        if let Some(caching_folder) = &self.triplestore.caching_folder {
             create_folder_if_not_exists(Path::new(&caching_folder))?;
             let n_50_mb = (df.estimated_size() / 50_000_000) + 1;
             let chunk_size = df.height() / n_50_mb;

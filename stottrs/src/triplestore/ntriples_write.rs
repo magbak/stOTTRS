@@ -23,7 +23,6 @@ use super::Triplestore;
 use crate::triplestore::conversion::convert_to_string;
 use crate::triplestore::TripleType;
 use oxrdf::NamedNode;
-use polars::error::PolarsError;
 use polars::export::rayon::iter::{IntoParallelIterator, ParallelIterator};
 use polars::export::rayon::prelude::ParallelExtend;
 use polars::prelude::{AnyValue, DataFrame, Series};
@@ -31,6 +30,10 @@ use polars::series::SeriesIter;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use std::io::Write;
+use oxrdf::vocab::xsd;
+use crate::mapping::errors::MappingError;
+use crate::mapping::RDFNodeType;
+use crate::triplestore::parquet::read_parquet;
 
 /// Utility to write to `&mut Vec<u8>` buffer
 struct StringWrap<'a>(pub &'a mut Vec<u8>);
@@ -47,25 +50,61 @@ impl Triplestore {
         &mut self,
         writer: &mut W,
         chunk_size: usize,
-    ) -> Result<()> {
+    ) -> Result<(), MappingError> {
         self.deduplicate();
         let n_threads = POOL.current_num_threads();
         let mut any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
         let mut write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
 
+        for (property,map) in &mut self.df_map {
+            for (rdf_node_type, tt) in map {
+                let triple_type = if let RDFNodeType::IRI = rdf_node_type {
+                    TripleType::ObjectProperty
+                } else if let RDFNodeType::Literal(lit) = rdf_node_type {
+                    if lit.as_ref() == xsd::STRING {
+                        TripleType::StringProperty
+                    } else {
+                    TripleType::NonStringProperty
+                    }
+                } else {
+                    todo!("Triple type {:?} not supported", rdf_node_type)
+                };
+                if let Some(dfs) = &mut tt.dfs {
+                    for df in dfs {
+                        df.as_single_chunk_par();
+                        write_ntriples_for_df(
+                            df,
+                            property,
+                            &None,
+                            writer,
+                            chunk_size,
+                            triple_type.clone(),
+                            n_threads,
+                            &mut any_value_iter_pool,
+                            &mut write_buffer_pool,
+                        )?;
+                    }
+                } else if let Some(paths) = &tt.df_paths {
+                    for p in paths {
+                        let df = read_parquet(p)?.collect().unwrap();
+                        write_ntriples_for_df(
+                            &df,
+                            property,
+                            &None,
+                            writer,
+                            chunk_size,
+                            triple_type.clone(),
+                            n_threads,
+                            &mut any_value_iter_pool,
+                            &mut write_buffer_pool,
+                        )?;
+                    }
+                }
+            }
+        }
+
         for (verb, df) in self.get_mut_object_property_triples() {
-            df.as_single_chunk_par();
-            write_ntriples_for_df(
-                df,
-                verb,
-                &None,
-                writer,
-                chunk_size,
-                TripleType::ObjectProperty,
-                n_threads,
-                &mut any_value_iter_pool,
-                &mut write_buffer_pool,
-            )?;
+
         }
         for (verb,df) in &mut self.get_mut_string_property_triples() {
             df.as_single_chunk_par();
@@ -110,7 +149,7 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
     n_threads: usize,
     any_value_iter_pool: &mut LowContentionPool<Vec<SeriesIter>>,
     write_buffer_pool: &mut LowContentionPool<Vec<u8>>,
-) -> Result<()> {
+) -> Result<(), MappingError> {
     let dt_str = if triple_type == TripleType::NonStringProperty {
         if let Some(nn) = dt {
             Some(nn.as_str())
@@ -200,7 +239,7 @@ fn write_ntriples_for_df<W: Write + ?Sized>(
         result_buf.par_extend(par_iter);
 
         for mut buf in result_buf.drain(..) {
-            let _ = writer.write(&buf)?;
+            let _ = writer.write(&buf).map_err(|x|MappingError::WriteNTriplesError(x));
             buf.clear();
             write_buffer_pool.set(buf);
         }
@@ -269,5 +308,3 @@ fn write_object_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>, 
     write!(f, " <{}>", v).unwrap();
     writeln!(f, " <{}> .", o).unwrap();
 }
-
-pub type Result<T> = std::result::Result<T, PolarsError>;

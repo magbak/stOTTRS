@@ -31,7 +31,9 @@ pub enum MappingError {
     FileCreateIOError(io::Error),
     FolderCreateIOError(io::Error),
     WriteParquetError(PolarsError),
-    PathDoesNotExist(String)
+    ReadParquetError(PolarsError),
+    PathDoesNotExist(String),
+    WriteNTriplesError(io::Error)
 }
 
 impl Display for MappingError {
@@ -146,6 +148,12 @@ impl Display for MappingError {
             }
             MappingError::PathDoesNotExist(p) => {
                 write!(f, "Path {} does not exist", p)
+            }
+            MappingError::ReadParquetError(p) => {
+                write!(f, "Reading parquet file resulted in an error: {:?}", p)
+            }
+            MappingError::WriteNTriplesError(e) => {
+                write!(f, "Error writing NTriples {}", e)
             }
         }
     }
