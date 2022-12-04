@@ -171,7 +171,6 @@ impl ExpandOptions {
         RustExpandOptions {
             language_tags: self.language_tags,
             unique_subsets: self.unique_subsets,
-            caching_folder: self.caching_folder,
         }
     }
 }
@@ -179,7 +178,7 @@ impl ExpandOptions {
 #[pymethods]
 impl Mapping {
     #[new]
-    pub fn new(documents: Option<Vec<&str>>) -> PyResult<Mapping> {
+    pub fn new(documents: Option<Vec<&str>>, caching_folder:Option<String>) -> PyResult<Mapping> {
         let mut parsed_documents = vec![];
         if let Some(documents) = documents {
             for ds in documents {
@@ -191,7 +190,7 @@ impl Mapping {
             .map_err(MapperError::from)
             .map_err(PyMapperError::from)?;
         Ok(Mapping {
-            inner: InnerMapping::new(&template_dataset),
+            inner: InnerMapping::new(&template_dataset, caching_folder),
         })
     }
 

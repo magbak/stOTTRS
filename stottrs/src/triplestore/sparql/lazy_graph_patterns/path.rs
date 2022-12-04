@@ -141,8 +141,20 @@ impl Triplestore {
                     JoinType::Cross,
                 );
             } else {
+                let join_col_exprs: Vec<Expr> = join_cols.iter().map(|x| col(x)).collect();
+                let all_false = [false].repeat(join_cols.len());
+                let lf = out_df.lazy().sort_by_exprs(
+                    join_col_exprs.as_slice(),
+                    all_false.as_slice(),
+                    false,
+                );
+                mappings.mappings = mappings.mappings.sort_by_exprs(
+                    join_col_exprs.as_slice(),
+                    all_false.as_slice(),
+                    false,
+                );
                 mappings.mappings = mappings.mappings.join(
-                    out_df.lazy(),
+                    lf,
                     join_on.as_slice(),
                     join_on.as_slice(),
                     JoinType::Inner,
@@ -154,10 +166,14 @@ impl Triplestore {
             }
             //TODO: THIS IS WRONG
             if let TermPattern::Variable(v) = subject {
-                mappings.rdf_node_types.insert(v.as_str().to_string(), RDFNodeType::IRI);
+                mappings
+                    .rdf_node_types
+                    .insert(v.as_str().to_string(), RDFNodeType::IRI);
             }
             if let TermPattern::Variable(v) = object {
-                mappings.rdf_node_types.insert(v.as_str().to_string(), RDFNodeType::IRI);
+                mappings
+                    .rdf_node_types
+                    .insert(v.as_str().to_string(), RDFNodeType::IRI);
             }
 
             return Ok(mappings);
@@ -269,7 +285,14 @@ impl Triplestore {
             } else {
                 let (dt, tt) = m.iter().next().unwrap();
                 assert!(tt.unique, "Should be deduplicated");
-                let mut lf = concat(tt.get_lazy_frames().map_err(|x|SparqlError::TripleTableReadError(x))?, true, true).unwrap().select([col("subject"), col("object")]);
+                let mut lf = concat(
+                    tt.get_lazy_frames()
+                        .map_err(|x| SparqlError::TripleTableReadError(x))?,
+                    true,
+                    true,
+                )
+                .unwrap()
+                .select([col("subject"), col("object")]);
                 if let Some(subject) = subject {
                     if let TermPattern::NamedNode(nn) = subject {
                         lf = lf.filter(
@@ -371,6 +394,8 @@ fn df_path(
             } = df_path(left, cat_df_map, max_index);
             df_left.rename("object", "on").unwrap();
             df_right.rename("subject", "on").unwrap();
+            df_left = df_left.sort(vec!["on"], vec![false]).unwrap();
+            df_right = df_right.sort(vec!["on"], vec![false]).unwrap();
             let df = df_left
                 .join(&df_right, ["on"], ["on"], JoinType::Inner, None)
                 .unwrap();

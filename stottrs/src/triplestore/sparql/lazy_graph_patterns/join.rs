@@ -22,7 +22,7 @@ impl Triplestore {
         let mut left_solution_mappings =
             self.lazy_graph_pattern(left, solution_mappings.clone(), &left_context)?;
         let SolutionMappings {
-            mappings: right_mappings,
+            mappings: mut right_mappings,
             columns: mut right_columns,
             rdf_node_types: mut right_datatypes,
         } = self.lazy_graph_pattern(right, solution_mappings, &right_context)?;
@@ -43,6 +43,13 @@ impl Triplestore {
                 JoinType::Cross,
             )
         } else {
+            let all_false = [false].repeat(join_on_cols.len());
+            right_mappings = right_mappings.sort_by_exprs(join_on_cols.as_slice(), all_false.as_slice(), false);
+            left_solution_mappings.mappings = left_solution_mappings.mappings.sort_by_exprs(
+                join_on_cols.as_slice(),
+                all_false.as_slice(),
+                false,
+            );
             left_solution_mappings.mappings = left_solution_mappings.mappings.join(
                 right_mappings,
                 join_on_cols.as_slice(),

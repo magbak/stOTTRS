@@ -244,9 +244,9 @@ SELECT ?site_label ?node WHERE {
     by = ["site_label", "node"]
     df = windpower_mapping.query(query).sort(by)
     filename = TESTDATA_PATH / "simple_property_path_query.csv"
-    df.write_csv(filename)
-    #expected_df = pl.scan_csv(filename).sort(by).collect()
-    #pl.testing.assert_frame_equal(df, expected_df)
+    #df.write_csv(filename)
+    expected_df = pl.scan_csv(filename).sort(by).collect()
+    pl.testing.assert_frame_equal(df, expected_df)
 
 def test_iterated_property_path_query(windpower_mapping):
     query = """PREFIX xsd:<http://www.w3.org/2001/XMLSchema#>

@@ -31,6 +31,7 @@ use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use std::io::Write;
 use crate::mapping::errors::MappingError;
+use crate::mapping::RDFNodeType;
 use crate::triplestore::parquet::{read_parquet};
 
 /// Utility to write to `&mut Vec<u8>` buffer
@@ -56,6 +57,7 @@ impl Triplestore {
 
         for (property, map) in &mut self.df_map {
             for (rdf_node_type, tt) in map {
+                let dt = if let RDFNodeType::Literal(dt) = rdf_node_type {Some(dt.clone())} else {None};
                 let triple_type = rdf_node_type.find_triple_type();
                 if let Some(dfs) = &mut tt.dfs {
                     for df in dfs {
@@ -63,7 +65,7 @@ impl Triplestore {
                         write_ntriples_for_df(
                             df,
                             property,
-                            &None,
+                            &dt,
                             writer,
                             chunk_size,
                             triple_type.clone(),
@@ -78,7 +80,7 @@ impl Triplestore {
                         write_ntriples_for_df(
                             &df,
                             property,
-                            &None,
+                            &dt,
                             writer,
                             chunk_size,
                             triple_type.clone(),

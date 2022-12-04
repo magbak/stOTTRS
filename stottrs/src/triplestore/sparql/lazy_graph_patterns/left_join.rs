@@ -49,7 +49,7 @@ impl Triplestore {
                 .filter(col(&expression_context.as_str()))
                 .drop_columns([&expression_context.as_str()]);
         }
-        let SolutionMappings{ mappings: right_mappings, columns: mut right_columns, rdf_node_types: mut right_datatypes } = right_solution_mappings;
+        let SolutionMappings{ mappings: mut right_mappings, columns: mut right_columns, rdf_node_types: mut right_datatypes } = right_solution_mappings;
 
         let mut join_on:Vec<&String> = left_solution_mappings.columns.intersection(&right_columns).collect();
         join_on.sort();
@@ -59,6 +59,13 @@ impl Triplestore {
         if join_on.is_empty() {
             left_solution_mappings.mappings = left_solution_mappings.mappings.join(right_mappings, join_on_cols.as_slice(), join_on_cols.as_slice(), JoinType::Cross)
         } else {
+            let all_false = [false].repeat(join_on_cols.len());
+            right_mappings = right_mappings.sort_by_exprs(join_on_cols.as_slice(), all_false.as_slice(), false);
+            left_solution_mappings.mappings = left_solution_mappings.mappings.sort_by_exprs(
+                join_on_cols.as_slice(),
+                all_false.as_slice(),
+                false,
+            );
             left_solution_mappings.mappings = left_solution_mappings.mappings.join(right_mappings, join_on_cols.as_slice(), join_on_cols.as_slice(), JoinType::Left)
         }
         for c in right_columns.drain() {
