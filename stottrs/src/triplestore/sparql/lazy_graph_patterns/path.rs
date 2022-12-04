@@ -7,7 +7,7 @@ use crate::triplestore::sparql::sparql_to_polars::{
     sparql_literal_to_polars_literal_value, sparql_named_node_to_polars_literal_value,
 };
 use oxrdf::NamedNode;
-use polars::prelude::{col, Expr, IntoLazy};
+use polars::prelude::{col, concat, Expr, IntoLazy};
 use polars_core::datatypes::{AnyValue, DataType};
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{ChunkAgg, JoinType};
@@ -62,7 +62,7 @@ impl Triplestore {
         let out_soo;
         let out_dt;
 
-        let cat_df_map = self.create_unique_cat_dfs(ppe, Some(subject), Some(object));
+        let cat_df_map = self.create_unique_cat_dfs(ppe, Some(subject), Some(object))?;
         let max_index = find_max_index(cat_df_map.values());
         if create_sparse {
             let SparsePathReturn { sparmat, soo, dt } =
@@ -182,39 +182,39 @@ impl Triplestore {
         ppe: &PropertyPathExpression,
         subject: Option<&TermPattern>,
         object: Option<&TermPattern>,
-    ) -> HashMap<String, DataFrame> {
+    ) -> Result<HashMap<String, DataFrame>, SparqlError> {
         match ppe {
             PropertyPathExpression::NamedNode(nn) => {
-                let df = self.get_single_nn_df(nn.as_str(), subject, object);
+                let df = self.get_single_nn_df(nn.as_str(), subject, object)?;
                 if let Some(df) = df {
                     let unique_cat_df = df_with_cats(df)
                         .unique(None, UniqueKeepStrategy::First)
                         .unwrap();
-                    HashMap::from([(nn.as_str().to_string(), unique_cat_df)])
+                    Ok(HashMap::from([(nn.as_str().to_string(), unique_cat_df)]))
                 } else {
                     let df = DataFrame::new(vec![
                         Series::new_empty("subject", &DataType::Categorical(None)),
                         Series::new_empty("object", &DataType::Categorical(None)),
                     ])
                     .unwrap();
-                    HashMap::from([(nn.as_str().to_string(), df)])
+                    Ok(HashMap::from([(nn.as_str().to_string(), df)]))
                 }
             }
             PropertyPathExpression::Reverse(inner) => {
                 self.create_unique_cat_dfs(inner, object, subject)
             }
             PropertyPathExpression::Sequence(left, right) => {
-                let mut left_df_map = self.create_unique_cat_dfs(left, subject, None);
-                let right_df_map = self.create_unique_cat_dfs(right, None, object);
+                let mut left_df_map = self.create_unique_cat_dfs(left, subject, None)?;
+                let right_df_map = self.create_unique_cat_dfs(right, None, object)?;
                 left_df_map.extend(right_df_map);
-                left_df_map
+                Ok(left_df_map)
             }
             PropertyPathExpression::Alternative(left, right) => {
                 let mut left_df_map =
-                    self.create_unique_cat_dfs(left, subject.clone(), object.clone());
-                let right_df_map = self.create_unique_cat_dfs(right, subject, object);
+                    self.create_unique_cat_dfs(left, subject.clone(), object.clone())?;
+                let right_df_map = self.create_unique_cat_dfs(right, subject, object)?;
                 left_df_map.extend(right_df_map);
-                left_df_map
+                Ok(left_df_map)
             }
             PropertyPathExpression::ZeroOrMore(inner) => {
                 self.create_unique_cat_dfs(inner, subject, object)
@@ -230,7 +230,7 @@ impl Triplestore {
                 let mut dfs = vec![];
                 for nn in self.df_map.keys() {
                     if !lookup.contains(nn) {
-                        let df = self.get_single_nn_df(nn, subject, object);
+                        let df = self.get_single_nn_df(nn, subject, object)?;
                         if let Some(df) = df {
                             dfs.push(df_with_cats(df));
                         }
@@ -249,7 +249,7 @@ impl Triplestore {
                     ])
                     .unwrap();
                 }
-                HashMap::from([(nns_name(nns), df)])
+                Ok(HashMap::from([(nns_name(nns), df)]))
             }
         }
     }
@@ -259,7 +259,7 @@ impl Triplestore {
         nn: &str,
         subject: Option<&TermPattern>,
         object: Option<&TermPattern>,
-    ) -> Option<DataFrame> {
+    ) -> Result<Option<DataFrame>, SparqlError> {
         let map_opt = self.df_map.get(nn);
         if let Some(m) = map_opt {
             if m.is_empty() {
@@ -269,8 +269,7 @@ impl Triplestore {
             } else {
                 let (dt, tt) = m.iter().next().unwrap();
                 assert!(tt.unique, "Should be deduplicated");
-                assert_eq!(tt.dfs.len(), 1, "No support for many dfs yet..");
-                let mut lf = tt.dfs.get(0).unwrap().clone().lazy(); //TODO: Inefficiency here with clone.. should filter on subject / object term before cloning.
+                let mut lf = concat(tt.get_lazy_frames().map_err(|x|SparqlError::TripleTableReadError(x))?, true, true).unwrap().select([col("subject"), col("object")]);
                 if let Some(subject) = subject {
                     if let TermPattern::NamedNode(nn) = subject {
                         lf = lf.filter(
@@ -297,10 +296,10 @@ impl Triplestore {
                         )
                     }
                 }
-                Some(lf.collect().unwrap())
+                Ok(Some(lf.collect().unwrap()))
             }
         } else {
-            None
+            Ok(None)
         }
     }
 }

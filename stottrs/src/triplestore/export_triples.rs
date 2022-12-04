@@ -8,14 +8,14 @@ use polars_core::prelude::AnyValue;
 
 impl Triplestore {
     pub fn object_property_triples<F, T>(
-        &self,
+        &mut self,
         func: F,
         out: &mut Vec<T>,
     ) -> Result<(), MappingError>
     where
         F: Fn(&str, &str, &str) -> T,
     {
-        for (verb, map) in &self.df_map {
+        for (verb, map) in &mut self.df_map {
             for (k, v) in map {
                 if k.find_triple_type() == TripleType::ObjectProperty {
                     for i in 0..v.len() {
@@ -32,13 +32,14 @@ impl Triplestore {
                         }
                     }
                 }
+                v.forget_tmp_df();
             }
         }
         Ok(())
     }
 
     pub fn string_data_property_triples<F, T>(
-        &self,
+        &mut self,
         func: F,
         out: &mut Vec<T>,
     ) -> Result<(), MappingError>
@@ -46,7 +47,7 @@ impl Triplestore {
         F: Fn(&str, &str, &str, Option<&str>) -> T,
     {
         //subject, verb, lexical_form, language_tag, datatype
-        for (verb, map) in &self.df_map {
+        for (verb, map) in &mut self.df_map {
             for (k, v) in map {
                 if k.find_triple_type() == TripleType::StringProperty {
                     for i in 0..v.len() {
@@ -69,6 +70,7 @@ impl Triplestore {
                             };
                             out.push(func(s, verb, lex, lang_opt));
                         }
+                        v.forget_tmp_df();
                     }
                 }
             }
@@ -77,7 +79,7 @@ impl Triplestore {
     }
 
     pub fn nonstring_data_property_triples<F, T>(
-        &self,
+        &mut self,
         func: F,
         out: &mut Vec<T>,
     ) -> Result<(), MappingError>
@@ -85,7 +87,7 @@ impl Triplestore {
         F: Fn(&str, &str, &str, &NamedNode) -> T,
     {
         //subject, verb, lexical_form, datatype
-        for (verb, map) in &self.df_map {
+        for (verb, map) in &mut self.df_map {
             for (k, v) in map {
                 if k.find_triple_type() == TripleType::NonStringProperty {
                     let object_type = if let RDFNodeType::Literal(l) = k {
@@ -115,6 +117,7 @@ impl Triplestore {
                                 out.push(func(s, verb, lex, object_type));
                             }
                         };
+                        v.forget_tmp_df();
                     }
                 }
             }

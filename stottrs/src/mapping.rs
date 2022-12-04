@@ -228,7 +228,6 @@ impl Mapping {
             let chunk_size = df.height() / n_50_mb;
             let mut offset = 0i64;
             loop {
-                let now = Instant::now();
                 let to_row = min(df.height(), offset as usize + chunk_size);
                 let df_slice = df.slice_par(offset, to_row);
                 offset += chunk_size as i64;

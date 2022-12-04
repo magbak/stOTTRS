@@ -14,5 +14,7 @@ pub enum SparqlError {
     #[error("Variable ?{} not found in context {}",.0, .1)]
     VariableNotFound(String, String),
     #[error("Error deduplicating triples {}", .0)]
-    DeduplicationError(MappingError)
+    DeduplicationError(MappingError),
+    #[error("Read dataframe error {}", .0)]
+    TripleTableReadError(MappingError)
 }

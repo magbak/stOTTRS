@@ -6,7 +6,7 @@ mod parquet;
 pub mod sparql;
 
 use crate::mapping::RDFNodeType;
-use crate::triplestore::parquet::{property_to_filename, read_parquet, write_parquet};
+use crate::triplestore::parquet::{property_to_filename, read_parquet, split_write_df, write_parquet};
 use log::debug;
 use oxrdf::vocab::xsd;
 use polars::prelude::{concat, IntoLazy, LazyFrame};
@@ -21,6 +21,7 @@ use std::fs::remove_file;
 use std::io;
 use std::path::Path;
 use std::time::Instant;
+use polars_core::utils::concat_df;
 use uuid::Uuid;
 use crate::mapping::errors::MappingError;
 
@@ -38,6 +39,7 @@ pub struct TripleTable {
     df_paths: Option<Vec<String>>,
     unique: bool,
     call_uuid: String,
+    tmp_df: Option<DataFrame>,
 }
 
 impl TripleTable {
@@ -51,11 +53,32 @@ impl TripleTable {
         }
     }
 
-    pub(crate) fn get_df(&self, idx:usize) -> Result<DataFrame, MappingError> {
+    pub(crate) fn get_df(&mut self, idx:usize) -> Result<&DataFrame, MappingError> {
         if let Some(dfs) = &self.dfs {
-            Ok(dfs.get(idx).unwrap().clone())
+            Ok(dfs.get(idx).unwrap())
         } else if let Some(paths) = &self.df_paths {
-            Ok(read_parquet(paths.get(idx).unwrap())?.collect().unwrap())
+            let tmp_df = read_parquet(paths.get(idx).unwrap())?.collect().unwrap();
+            self.tmp_df = Some(tmp_df);
+            Ok(self.tmp_df.as_ref().unwrap())
+        } else {
+            panic!("TripleTable in invalid state")
+        }
+    }
+
+    pub(crate) fn forget_tmp_df(&mut self) {
+        self.tmp_df = None;
+    }
+
+    pub(crate) fn get_lazy_frames(&self) -> Result<Vec<LazyFrame>, MappingError> {
+        if let Some(dfs) = &self.dfs {
+            Ok(vec![concat_df(dfs).unwrap().lazy()])
+        } else if let Some(paths) = &self.df_paths {
+            let lf_results:Vec<Result<LazyFrame, MappingError>> = paths.par_iter().map(|x|read_parquet(x)).collect();
+            let mut lfs = vec![];
+            for lfr in lf_results {
+                lfs.push(lfr?);
+            }
+            Ok(lfs)
         } else {
             panic!("TripleTable in invalid state")
         }
@@ -109,7 +132,7 @@ impl Triplestore {
                         for r in removed {
                             r.map_err(|x|MappingError::RemoveParquetFileError(x))?
                         }
-                        let paths = self.split_write_df(unique_df, predicate)?;
+                        let paths = split_write_df(self.caching_folder.as_ref().unwrap(), unique_df, predicate)?;
                         v.df_paths = Some(paths);
                         v.unique = true;
                     } else {
@@ -160,7 +183,7 @@ impl Triplestore {
         }
     }
 
-    fn add_triples_df_with_folder(&mut self, triples_df: Vec<TripleDF>, call_uuid: &String) -> Result<(), MappingError>{
+    fn add_triples_df_with_folder(&mut self, mut triples_df: Vec<TripleDF>, call_uuid: &String) -> Result<(), MappingError>{
         let folder_path = Path::new(self.caching_folder.as_ref().unwrap());
         let file_paths: Vec<(String, Result<_, _>, String, RDFNodeType)> = triples_df
             .par_drain(..)
@@ -204,6 +227,7 @@ impl Triplestore {
                             df_paths: Some(vec![file_path]),
                             unique: true,
                             call_uuid: call_uuid.clone(),
+                            tmp_df:None,
                         },
                     );
                 }
@@ -217,6 +241,7 @@ impl Triplestore {
                             df_paths: Some(vec![file_path]),
                             unique: true,
                             call_uuid: call_uuid.clone(),
+                            tmp_df:None
                         },
                     )]),
                 );
@@ -248,6 +273,7 @@ impl Triplestore {
                             df_paths: None,
                             unique: true,
                             call_uuid: call_uuid.clone(),
+                            tmp_df:None
                         },
                     );
                 }
@@ -261,6 +287,7 @@ impl Triplestore {
                             df_paths: None,
                             unique: true,
                             call_uuid: call_uuid.clone(),
+                            tmp_df:None,
                         },
                     )]),
                 );

@@ -46,7 +46,7 @@ fn test_stottrs_easy_case(testdata_path: PathBuf) {
     let series = [v1, v2];
     let df = DataFrame::from_iter(series);
 
-    let mut mapping = Mapping::from_str(&t_str).unwrap();
+    let mut mapping = Mapping::from_str(&t_str, None).unwrap();
     let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
@@ -88,7 +88,7 @@ fn test_all_iri_case() {
     let series = [v1];
     let df = DataFrame::from_iter(series);
 
-    let mut mapping = Mapping::from_str(&t_str).unwrap();
+    let mut mapping = Mapping::from_str(&t_str, None).unwrap();
     let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
@@ -134,7 +134,7 @@ fn test_string_language_tag_cases() {
     let series = [my_string];
     let df = DataFrame::from_iter(series);
 
-    let mut mapping = Mapping::from_str(&t_str).unwrap();
+    let mut mapping = Mapping::from_str(&t_str, None).unwrap();
     let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
@@ -197,7 +197,7 @@ fn test_const_list_case() {
     let series = [v1];
     let df = DataFrame::from_iter(series);
 
-    let mut mapping = Mapping::from_str(&t_str).unwrap();
+    let mut mapping = Mapping::from_str(&t_str, None).unwrap();
     let _report = mapping
         .expand(
             "http://example.net/ns#ExampleTemplate",
@@ -262,7 +262,7 @@ ex:Nested [?myVar] :: {
     ottr:Triple(ex:anObject, ex:hasNumber, ?myVar)
 } .
 "#;
-    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut mapping = Mapping::from_str(&stottr, None).unwrap();
     let mut v1 = Series::from_iter(&[1, 2i32]);
     v1.rename("myVar1");
     let mut v2 = Series::from_iter(&[3, 4i32]);
@@ -350,7 +350,7 @@ ex:ExampleTemplate [
     ottr:Triple(ex:yetAnotherObject, ex:hasDateTime, ?Datetime_ms)
   } .
 "#;
-    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut mapping = Mapping::from_str(&stottr, None).unwrap();
     let mut boolean = Series::from_iter(&[true, false]);
     boolean.rename("Boolean");
     let mut uint32 = Series::from_iter(&[5u32, 6u32]);
@@ -610,7 +610,7 @@ ex:AnotherExampleTemplate [?object, ?predicate, ?myList] :: {
     cross | ottr:Triple(?object, ?predicate, ++?myList)
   } .
 "#;
-    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut mapping = Mapping::from_str(&stottr, None).unwrap();
     let mut object = Series::from_iter([
         "http://example.net/ns#obj1",
         "http://example.net/ns#obj1",
@@ -694,7 +694,7 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
     ottr:Triple(?subject, ex:hasOtherNumber, ?myVar2)
 } .
 "#;
-    let mut mapping = Mapping::from_str(&stottr).unwrap();
+    let mut mapping = Mapping::from_str(&stottr, None).unwrap();
     let mut subject = Series::from_iter([
         "http://example.net/ns#obj1",
         "http://example.net/ns#obj1",
@@ -805,7 +805,7 @@ ex:AnotherExampleTemplate [?subject, ?myList1, ?myList2] :: {
 #[rstest]
 #[serial]
 fn test_default() {
-    let mut mapping = Mapping::from_str("").unwrap();
+    let mut mapping = Mapping::from_str("", None).unwrap();
     let mut subject = Series::from_iter([
         "http://example.net/ns#obj1",
         "http://example.net/ns#obj1",
@@ -878,7 +878,7 @@ fn test_default() {
 #[rstest]
 #[serial]
 fn test_default_list() {
-    let mut mapping = Mapping::from_str("").unwrap();
+    let mut mapping = Mapping::from_str("", None).unwrap();
     let mut subject = Series::from_iter([
         "http://example.net/ns#obj1",
         "http://example.net/ns#obj1",

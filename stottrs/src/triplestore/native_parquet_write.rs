@@ -37,7 +37,7 @@ impl Triplestore {
                 }
                 let mut file_path = path_buf.clone();
                 if let Some(caching_folder) = &self.caching_folder{ } else {
-                    for (i, df) in tt.dfs.unwrap().iter_mut().enumerate() {
+                    for (i, df) in tt.dfs.as_mut().unwrap().iter_mut().enumerate() {
                         let filename = format!("{filename}_part_{i}.parquet");
                         let mut file_path = file_path.clone();
                         file_path.push(filename);

@@ -1,5 +1,5 @@
 use crate::triplestore::sparql::query_context::Context;
-use polars::prelude::{col, Expr, lit};
+use polars::prelude::{col, concat, Expr, lit};
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use std::collections::{HashMap, HashSet};
 use log::warn;
@@ -33,9 +33,7 @@ impl Triplestore {
                     } else {
                         let (dt, tt) = m.iter().next().unwrap();
                         assert!(tt.unique, "Should be deduplicated");
-                        assert_eq!(tt.dfs.len(), 1, "No support for multiple dfs yet");
-                        let df = tt.dfs.get(0).unwrap();
-                        let mut lf = df.clone().lazy().select([col("subject"), col("object")]);
+                        let mut lf = concat(tt.get_lazy_frames().map_err(|x|SparqlError::TripleTableReadError(x))?, true, true).unwrap().select([col("subject"), col("object")]);
                         let mut var_cols = vec![];
                         let mut str_cols = vec![];
                         match &triple_pattern.subject {
