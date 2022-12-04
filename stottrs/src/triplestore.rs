@@ -26,7 +26,6 @@ use uuid::Uuid;
 use crate::mapping::errors::MappingError;
 
 const LANGUAGE_TAG_COLUMN: &str = "language_tag";
-const PARQUET_FILE_SIZE: usize = 50_000_000;
 
 pub struct Triplestore {
     deduplicated: bool,
@@ -150,7 +149,7 @@ impl Triplestore {
         Ok(())
     }
 
-    pub fn add_triples_vec(&mut self, mut ts: Vec<TriplesToAdd>, call_uuid: &String) {
+    pub fn add_triples_vec(&mut self, mut ts: Vec<TriplesToAdd>, call_uuid: &String) -> Result<(), MappingError> {
         let df_vecs_to_add: Vec<Vec<TripleDF>> = ts
             .par_drain(..)
             .map(|t| {
@@ -172,15 +171,17 @@ impl Triplestore {
             })
             .collect();
         let dfs_to_add = flatten(df_vecs_to_add);
-        self.add_triples_df(dfs_to_add, call_uuid);
+        self.add_triples_df(dfs_to_add, call_uuid)?;
+        Ok(())
     }
 
-    fn add_triples_df(&mut self, triples_df: Vec<TripleDF>, call_uuid: &String) {
-        if let Some(folder) = &self.caching_folder {
-            self.add_triples_df_with_folder(triples_df, call_uuid);
+    fn add_triples_df(&mut self, triples_df: Vec<TripleDF>, call_uuid: &String) -> Result<(), MappingError> {
+        if let Some(_) = &self.caching_folder {
+            self.add_triples_df_with_folder(triples_df, call_uuid)?;
         } else {
             self.add_triples_df_without_folder(triples_df, call_uuid);
         }
+        Ok(())
     }
 
     fn add_triples_df_with_folder(&mut self, mut triples_df: Vec<TripleDF>, call_uuid: &String) -> Result<(), MappingError>{

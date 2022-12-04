@@ -16,6 +16,7 @@ use crate::literals::sparql_literal_to_any_value;
 use crate::mapping::RDFNodeType;
 use crate::triplestore::sparql::errors::SparqlError;
 use crate::triplestore::sparql::solution_mapping::SolutionMappings;
+use crate::triplestore::TriplesToAdd;
 use polars::frame::DataFrame;
 use polars::prelude::{col, IntoLazy};
 use polars_core::prelude::{DataType, Series, UniqueKeepStrategy};
@@ -23,7 +24,6 @@ use polars_core::toggle_string_cache;
 use spargebra::term::{NamedNodePattern, TermPattern, TriplePattern};
 use spargebra::Query;
 use uuid::Uuid;
-use crate::triplestore::TriplesToAdd;
 
 pub enum QueryResult {
     Select(DataFrame),
@@ -38,7 +38,8 @@ impl Triplestore {
 
     fn query_parsed(&mut self, query: &Query) -> Result<QueryResult, SparqlError> {
         if !self.deduplicated {
-            self.deduplicate().map_err(|x|SparqlError::DeduplicationError(x))?;
+            self.deduplicate()
+                .map_err(|x| SparqlError::DeduplicationError(x))?;
         }
         toggle_string_cache(true);
         let context = Context::new();
@@ -76,7 +77,7 @@ impl Triplestore {
                 let SolutionMappings {
                     mappings,
                     columns: _,
-                    rdf_node_types: rdf_node_types,
+                    rdf_node_types,
                 } = self.lazy_graph_pattern(&pattern, None, &context)?;
                 let df = mappings.collect().unwrap();
                 let mut dfs = vec![];
@@ -101,15 +102,16 @@ impl Triplestore {
                 QueryResult::Construct(dfs) => {
                     let mut all_triples_to_add = vec![];
                     for (df, dt) in dfs {
-                        all_triples_to_add.push(TriplesToAdd{
+                        all_triples_to_add.push(TriplesToAdd {
                             df,
-                            object_type:dt,
+                            object_type: dt,
                             language_tag: None,
                             static_verb_column: None,
-                            has_unique_subset:false
+                            has_unique_subset: false,
                         });
                     }
-                    self.add_triples_vec(all_triples_to_add, &call_uuid);
+                    self.add_triples_vec(all_triples_to_add, &call_uuid)
+                        .map_err(|x| SparqlError::StoreTriplesError(x))?;
                     Ok(())
                 }
             }

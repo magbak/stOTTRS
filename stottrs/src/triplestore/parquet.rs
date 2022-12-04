@@ -7,6 +7,8 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
+const PARQUET_DF_SIZE: usize = 50_000_000;
+
 pub(crate) fn property_to_filename(property_name: &str) -> String {
     property_name
         .iter_elements()
@@ -44,8 +46,8 @@ pub(crate) fn split_write_df(
         df: DataFrame,
         predicate: &str,
     ) -> Result<Vec<String>, MappingError> {
-        let n_50_mb = (df.estimated_size() / 50_000_000) + 1;
-        let chunk_size = df.height() / n_50_mb;
+        let n_of_size = (df.estimated_size() / PARQUET_DF_SIZE) + 1;
+        let chunk_size = df.height() / n_of_size;
         let mut offset = 0i64;
         let mut paths = vec![];
         loop {

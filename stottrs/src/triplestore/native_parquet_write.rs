@@ -16,7 +16,7 @@ impl Triplestore {
         }
         let path_buf = path.to_path_buf();
 
-        self.deduplicate();
+        self.deduplicate()?;
 
         let mut dfs_to_write = vec![];
 
@@ -35,8 +35,8 @@ impl Triplestore {
                         property_to_filename(property),
                     )
                 }
-                let mut file_path = path_buf.clone();
-                if let Some(caching_folder) = &self.caching_folder{ } else {
+                let file_path = path_buf.clone();
+                if let Some(_) = &self.caching_folder{ } else {
                     for (i, df) in tt.dfs.as_mut().unwrap().iter_mut().enumerate() {
                         let filename = format!("{filename}_part_{i}.parquet");
                         let mut file_path = file_path.clone();

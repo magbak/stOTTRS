@@ -125,8 +125,8 @@ impl Triplestore {
         Ok(())
     }
 
-    pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {
-        self.deduplicate();
+    pub fn export_oxrdf_triples(&mut self) -> Result<Vec<Triple>, MappingError> {
+        self.deduplicate()?;
         fn subject_from_str(s: &str) -> Subject {
             Subject::NamedNode(NamedNode::new_unchecked(s))
         }
@@ -160,10 +160,10 @@ impl Triplestore {
         }
 
         let mut triples = vec![];
-        self.object_property_triples(object_triple_func, &mut triples);
-        self.string_data_property_triples(string_data_triple_func, &mut triples);
-        self.nonstring_data_property_triples(nonstring_data_triple_func, &mut triples);
-        triples
+        self.object_property_triples(object_triple_func, &mut triples)?;
+        self.string_data_property_triples(string_data_triple_func, &mut triples)?;
+        self.nonstring_data_property_triples(nonstring_data_triple_func, &mut triples)?;
+        Ok(triples)
     }
 }
 

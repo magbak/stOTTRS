@@ -407,12 +407,12 @@ fn df_path(
         }
         PropertyPathExpression::Alternative(left, right) => {
             let DFPathReturn {
-                df: mut df_left,
+                df: df_left,
                 soo: soo_left,
                 dt: dt_left,
             } = df_path(left, cat_df_map, max_index);
             let DFPathReturn {
-                df: mut df_right,
+                df: df_right,
                 soo: _soo_right,
                 dt: _dt_right,
             } = df_path(left, cat_df_map, max_index);

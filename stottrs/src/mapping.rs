@@ -173,7 +173,7 @@ impl Mapping {
             .map_err(|x| MapperError::MappingError(x))
     }
 
-    pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {
+    pub fn export_oxrdf_triples(&mut self) -> Result<Vec<Triple>, MappingError> {
         self.triplestore.export_oxrdf_triples()
     }
 
@@ -389,7 +389,7 @@ impl Mapping {
             });
         }
         self.triplestore
-            .add_triples_vec(all_triples_to_add, call_uuid);
+            .add_triples_vec(all_triples_to_add, call_uuid)?;
 
         debug!(
             "Result processing took {} seconds",

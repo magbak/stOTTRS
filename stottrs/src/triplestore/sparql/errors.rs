@@ -16,5 +16,7 @@ pub enum SparqlError {
     #[error("Error deduplicating triples {}", .0)]
     DeduplicationError(MappingError),
     #[error("Read dataframe error {}", .0)]
-    TripleTableReadError(MappingError)
+    TripleTableReadError(MappingError),
+    #[error("Error storing triples {}", .0)]
+    StoreTriplesError(MappingError)
 }
