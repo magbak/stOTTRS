@@ -3,7 +3,6 @@ pub mod default;
 pub mod errors;
 mod validation_inference;
 
-use std::cmp::min;
 use crate::ast::{
     ConstantLiteral, ConstantTerm, Instance, ListExpanderType, PType, Signature, StottrTerm,
     Template,
@@ -15,7 +14,7 @@ use crate::io_funcs::create_folder_if_not_exists;
 use crate::mapping::constant_terms::constant_to_expr;
 use crate::mapping::errors::MappingError;
 use crate::templates::TemplateDataset;
-use crate::triplestore::{TriplesToAdd, Triplestore};
+use crate::triplestore::{TripleType, TriplesToAdd, Triplestore};
 use log::debug;
 use oxrdf::vocab::xsd;
 use oxrdf::{NamedNode, NamedNodeRef, Triple};
@@ -24,6 +23,7 @@ use polars::prelude::{DataFrame, IntoLazy, PolarsError};
 use polars_core::series::Series;
 use rayon::iter::ParallelDrainRange;
 use rayon::iter::ParallelIterator;
+use std::cmp::min;
 use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
@@ -94,13 +94,28 @@ impl RDFNodeType {
     pub fn is_float(&self) -> bool {
         self.is_lit_type(xsd::FLOAT)
     }
+
+    pub(crate) fn find_triple_type(&self) -> TripleType {
+        let triple_type = if let RDFNodeType::IRI = self {
+            TripleType::ObjectProperty
+        } else if let RDFNodeType::Literal(lit) = self {
+            if lit.as_ref() == xsd::STRING {
+                TripleType::StringProperty
+            } else {
+                TripleType::NonStringProperty
+            }
+        } else {
+            todo!("Triple type {:?} not supported", self)
+        };
+        triple_type
+    }
 }
 
 #[derive(Debug, PartialEq)]
 pub struct MappingReport {}
 
 impl Mapping {
-    pub fn new(template_dataset: &TemplateDataset, caching_folder:Option<String>) -> Mapping {
+    pub fn new(template_dataset: &TemplateDataset, caching_folder: Option<String>) -> Mapping {
         match env_logger::try_init() {
             _ => {}
         }
@@ -110,23 +125,32 @@ impl Mapping {
         }
     }
 
-    pub fn from_folder<P: AsRef<Path>>(path: P, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_folder<P: AsRef<Path>>(
+        path: P,
+        caching_folder: Option<String>,
+    ) -> Result<Mapping, Box<dyn Error>> {
         let dataset = TemplateDataset::from_folder(path)?;
         Ok(Mapping::new(&dataset, caching_folder))
     }
 
-    pub fn from_file<P: AsRef<Path>>(path: P, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_file<P: AsRef<Path>>(
+        path: P,
+        caching_folder: Option<String>,
+    ) -> Result<Mapping, Box<dyn Error>> {
         let dataset = TemplateDataset::from_file(path)?;
         Ok(Mapping::new(&dataset, caching_folder))
     }
 
-    pub fn from_str(s: &str, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_str(s: &str, caching_folder: Option<String>) -> Result<Mapping, Box<dyn Error>> {
         let doc = document_from_str(s.into())?;
         let dataset = TemplateDataset::new(vec![doc])?;
         Ok(Mapping::new(&dataset, caching_folder))
     }
 
-    pub fn from_strs(ss: Vec<&str>, caching_folder:Option<String>) -> Result<Mapping, Box<dyn Error>> {
+    pub fn from_strs(
+        ss: Vec<&str>,
+        caching_folder: Option<String>,
+    ) -> Result<Mapping, Box<dyn Error>> {
         let mut docs = vec![];
         for s in ss {
             let doc = document_from_str(s.into())?;
@@ -342,7 +366,7 @@ impl Mapping {
     fn process_results(
         &mut self,
         mut result_vec: Vec<OTTRTripleInstance>,
-        call_uuid: &String
+        call_uuid: &String,
     ) -> Result<(), MappingError> {
         let now = Instant::now();
         let triples: Vec<
@@ -365,7 +389,8 @@ impl Mapping {
                 has_unique_subset,
             });
         }
-        self.triplestore.add_triples_vec(all_triples_to_add, call_uuid);
+        self.triplestore
+            .add_triples_vec(all_triples_to_add, call_uuid);
 
         debug!(
             "Result processing took {} seconds",

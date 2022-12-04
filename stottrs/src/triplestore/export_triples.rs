@@ -1,78 +1,125 @@
 use super::Triplestore;
-use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
-use polars_core::prelude::{AnyValue};
+use crate::mapping::errors::MappingError;
+use crate::mapping::RDFNodeType;
 use crate::triplestore::conversion::convert_to_string;
+use crate::triplestore::TripleType;
+use oxrdf::{Literal, NamedNode, Subject, Term, Triple};
+use polars_core::prelude::AnyValue;
 
 impl Triplestore {
-    pub fn object_property_triples<F, T>(&self, func: F, out: &mut Vec<T>)
+    pub fn object_property_triples<F, T>(
+        &self,
+        func: F,
+        out: &mut Vec<T>,
+    ) -> Result<(), MappingError>
     where
         F: Fn(&str, &str, &str) -> T,
     {
-        for (verb, object_property_triples) in self.get_object_property_triples() {
-            if object_property_triples.height() > 0 {
-                let mut subject_iterator =
-                    object_property_triples.column("subject").unwrap().iter();
-                let mut object_iterator = object_property_triples.column("object").unwrap().iter();
-                for _ in 0..object_property_triples.height() {
-                    let s = anyutf8_to_str(subject_iterator.next().unwrap());
-                    let o = anyutf8_to_str(object_iterator.next().unwrap());
-                    out.push(func(s, verb, o));
+        for (verb, map) in &self.df_map {
+            for (k, v) in map {
+                if k.find_triple_type() == TripleType::ObjectProperty {
+                    for i in 0..v.len() {
+                        let df = v.get_df(i)?;
+                        if df.height() == 0 {
+                            return Ok(());
+                        }
+                        let mut subject_iterator = df.column("subject").unwrap().iter();
+                        let mut object_iterator = df.column("object").unwrap().iter();
+                        for _ in 0..df.height() {
+                            let s = anyutf8_to_str(subject_iterator.next().unwrap());
+                            let o = anyutf8_to_str(object_iterator.next().unwrap());
+                            out.push(func(s, verb, o));
+                        }
+                    }
                 }
             }
         }
+        Ok(())
     }
 
-    pub fn string_data_property_triples<F, T>(&self, func: F, out: &mut Vec<T>)
+    pub fn string_data_property_triples<F, T>(
+        &self,
+        func: F,
+        out: &mut Vec<T>,
+    ) -> Result<(), MappingError>
     where
         F: Fn(&str, &str, &str, Option<&str>) -> T,
     {
         //subject, verb, lexical_form, language_tag, datatype
-        for (verb, data_property_triples) in self.get_string_property_triples() {
-            if data_property_triples.height() > 0 {
-                let mut subject_iterator = data_property_triples.column("subject").unwrap().iter();
-                let mut data_iterator = data_property_triples.column("object").unwrap().iter();
-                let mut language_tag_iterator = data_property_triples.column("language_tag").unwrap().iter();
-                for _ in 0..data_property_triples.height() {
-                    let s = anyutf8_to_str(subject_iterator.next().unwrap());
-                    let lex = anyutf8_to_str(data_iterator.next().unwrap());
-                    let lang_opt = if let AnyValue::Utf8(lang) = language_tag_iterator.next().unwrap() {
-                        Some(lang)
-                    } else {
-                        None
-                    };
-                    out.push(func(s, verb, lex, lang_opt));
+        for (verb, map) in &self.df_map {
+            for (k, v) in map {
+                if k.find_triple_type() == TripleType::StringProperty {
+                    for i in 0..v.len() {
+                        let df = v.get_df(i)?;
+                        if df.height() == 0 {
+                            return Ok(());
+                        }
+                        let mut subject_iterator = df.column("subject").unwrap().iter();
+                        let mut data_iterator = df.column("object").unwrap().iter();
+                        let mut language_tag_iterator = df.column("language_tag").unwrap().iter();
+                        for _ in 0..df.height() {
+                            let s = anyutf8_to_str(subject_iterator.next().unwrap());
+                            let lex = anyutf8_to_str(data_iterator.next().unwrap());
+                            let lang_opt = if let AnyValue::Utf8(lang) =
+                                language_tag_iterator.next().unwrap()
+                            {
+                                Some(lang)
+                            } else {
+                                None
+                            };
+                            out.push(func(s, verb, lex, lang_opt));
+                        }
+                    }
                 }
             }
         }
+        Ok(())
     }
 
-    pub fn nonstring_data_property_triples<F, T>(&self, func: F, out: &mut Vec<T>)
+    pub fn nonstring_data_property_triples<F, T>(
+        &self,
+        func: F,
+        out: &mut Vec<T>,
+    ) -> Result<(), MappingError>
     where
         F: Fn(&str, &str, &str, &NamedNode) -> T,
     {
-        //subject, verb, lexical_form, language_tag, datatype
-        for (verb, data_property_triples, object_type) in self.get_non_string_property_triples() {
-            if data_property_triples.height() > 0 {
-                let mut subject_iterator = data_property_triples.column("subject").unwrap().iter();
-                let data_as_strings = convert_to_string(data_property_triples.column("object").unwrap());
-                if let Some(s) = data_as_strings {
-                    let mut data_iterator = s.iter();
-                    for _ in 0..data_property_triples.height() {
-                        let s = anyutf8_to_str(subject_iterator.next().unwrap());
-                        let lex = anyutf8_to_str(data_iterator.next().unwrap());
-                        out.push(func(s, verb, lex, object_type));
+        //subject, verb, lexical_form, datatype
+        for (verb, map) in &self.df_map {
+            for (k, v) in map {
+                if k.find_triple_type() == TripleType::NonStringProperty {
+                    let object_type = if let RDFNodeType::Literal(l) = k {
+                        l
+                    } else {
+                        panic!("Should never happen")
+                    };
+                    for i in 0..v.len() {
+                        let df = v.get_df(i)?;
+                        if df.height() == 0 {
+                            return Ok(());
+                        }
+                        let mut subject_iterator = df.column("subject").unwrap().iter();
+                        let data_as_strings = convert_to_string(df.column("object").unwrap());
+                        if let Some(s) = data_as_strings {
+                            let mut data_iterator = s.iter();
+                            for _ in 0..df.height() {
+                                let s = anyutf8_to_str(subject_iterator.next().unwrap());
+                                let lex = anyutf8_to_str(data_iterator.next().unwrap());
+                                out.push(func(s, verb, lex, object_type));
+                            }
+                        } else {
+                            let mut data_iterator = df.column("object").unwrap().iter();
+                            for _ in 0..df.height() {
+                                let s = anyutf8_to_str(subject_iterator.next().unwrap());
+                                let lex = anyutf8_to_str(data_iterator.next().unwrap());
+                                out.push(func(s, verb, lex, object_type));
+                            }
+                        };
                     }
-                } else {
-                    let mut data_iterator = data_property_triples.column("object").unwrap().iter();
-                    for _ in 0..data_property_triples.height() {
-                        let s = anyutf8_to_str(subject_iterator.next().unwrap());
-                        let lex = anyutf8_to_str(data_iterator.next().unwrap());
-                        out.push(func(s, verb, lex, object_type));
-                    }
-                };
-
+                }
             }
         }
+        Ok(())
     }
 
     pub fn export_oxrdf_triples(&mut self) -> Vec<Triple> {
@@ -91,12 +138,7 @@ impl Triplestore {
             Triple::new(subject, verb, object)
         }
 
-        fn string_data_triple_func(
-            s: &str,
-            v: &str,
-            lex: &str,
-            lang_opt: Option<&str>,
-        ) -> Triple {
+        fn string_data_triple_func(s: &str, v: &str, lex: &str, lang_opt: Option<&str>) -> Triple {
             let subject = subject_from_str(s);
             let verb = NamedNode::new_unchecked(v);
             let literal = if let Some(lang) = lang_opt {
@@ -107,12 +149,7 @@ impl Triplestore {
             Triple::new(subject, verb, Term::Literal(literal))
         }
 
-        fn nonstring_data_triple_func(
-            s: &str,
-            v: &str,
-            lex: &str,
-            dt: &NamedNode,
-        ) -> Triple {
+        fn nonstring_data_triple_func(s: &str, v: &str, lex: &str, dt: &NamedNode) -> Triple {
             let subject = subject_from_str(s);
             let verb = NamedNode::new_unchecked(v);
             let literal = Literal::new_typed_literal(lex, dt.clone());

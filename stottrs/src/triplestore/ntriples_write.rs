@@ -30,10 +30,8 @@ use polars::series::SeriesIter;
 use polars_core::POOL;
 use polars_utils::contention_pool::LowContentionPool;
 use std::io::Write;
-use oxrdf::vocab::xsd;
 use crate::mapping::errors::MappingError;
-use crate::mapping::RDFNodeType;
-use crate::triplestore::parquet::read_parquet;
+use crate::triplestore::parquet::{read_parquet};
 
 /// Utility to write to `&mut Vec<u8>` buffer
 struct StringWrap<'a>(pub &'a mut Vec<u8>);
@@ -56,19 +54,9 @@ impl Triplestore {
         let mut any_value_iter_pool = LowContentionPool::<Vec<_>>::new(n_threads);
         let mut write_buffer_pool = LowContentionPool::<Vec<_>>::new(n_threads);
 
-        for (property,map) in &mut self.df_map {
+        for (property, map) in &mut self.df_map {
             for (rdf_node_type, tt) in map {
-                let triple_type = if let RDFNodeType::IRI = rdf_node_type {
-                    TripleType::ObjectProperty
-                } else if let RDFNodeType::Literal(lit) = rdf_node_type {
-                    if lit.as_ref() == xsd::STRING {
-                        TripleType::StringProperty
-                    } else {
-                    TripleType::NonStringProperty
-                    }
-                } else {
-                    todo!("Triple type {:?} not supported", rdf_node_type)
-                };
+                let triple_type = rdf_node_type.find_triple_type();
                 if let Some(dfs) = &mut tt.dfs {
                     for df in dfs {
                         df.as_single_chunk_par();
@@ -102,152 +90,119 @@ impl Triplestore {
                 }
             }
         }
-
-        for (verb, df) in self.get_mut_object_property_triples() {
-
-        }
-        for (verb,df) in &mut self.get_mut_string_property_triples() {
-            df.as_single_chunk_par();
-            write_ntriples_for_df(
-                df,
-                verb,
-                &None,
-                writer,
-                chunk_size,
-                TripleType::StringProperty,
-                n_threads,
-                &mut any_value_iter_pool,
-                &mut write_buffer_pool,
-            )?;
-        }
-        for (verb, df, dt) in self.get_mut_non_string_property_triples() {
-            df.as_single_chunk_par();
-            write_ntriples_for_df(
-                df,
-                verb,
-                &Some(dt.clone()),
-                writer,
-                chunk_size,
-                TripleType::NonStringProperty,
-                n_threads,
-                &mut any_value_iter_pool,
-                &mut write_buffer_pool,
-            )?;
-        }
-
         Ok(())
     }
 }
 
-fn write_ntriples_for_df<W: Write + ?Sized>(
-    df: &DataFrame,
-    verb: &String,
-    dt: &Option<NamedNode>,
-    writer: &mut W,
-    chunk_size: usize,
-    triple_type: TripleType,
-    n_threads: usize,
-    any_value_iter_pool: &mut LowContentionPool<Vec<SeriesIter>>,
-    write_buffer_pool: &mut LowContentionPool<Vec<u8>>,
-) -> Result<(), MappingError> {
-    let dt_str = if triple_type == TripleType::NonStringProperty {
-        if let Some(nn) = dt {
-            Some(nn.as_str())
+    fn write_ntriples_for_df<W: Write + ?Sized>(
+        df: &DataFrame,
+        verb: &String,
+        dt: &Option<NamedNode>,
+        writer: &mut W,
+        chunk_size: usize,
+        triple_type: TripleType,
+        n_threads: usize,
+        any_value_iter_pool: &mut LowContentionPool<Vec<SeriesIter>>,
+        write_buffer_pool: &mut LowContentionPool<Vec<u8>>,
+    ) -> Result<(), MappingError> {
+        let dt_str = if triple_type == TripleType::NonStringProperty {
+            if let Some(nn) = dt {
+                Some(nn.as_str())
+            } else {
+                panic!("Must have datatype for non string property")
+            }
         } else {
-            panic!("Must have datatype for non string property")
-        }
-    } else {
-        None
-    };
+            None
+        };
 
-    let len = df.height();
+        let len = df.height();
 
-    let total_rows_per_pool_iter = n_threads * chunk_size;
+        let total_rows_per_pool_iter = n_threads * chunk_size;
 
-    let mut n_rows_finished = 0;
+        let mut n_rows_finished = 0;
 
-    // holds the buffers that will be written
-    let mut result_buf = Vec::with_capacity(n_threads);
-    while n_rows_finished < len {
-        let par_iter = (0..n_threads).into_par_iter().map(|thread_no| {
-            let thread_offset = thread_no * chunk_size;
-            let total_offset = n_rows_finished + thread_offset;
-            let mut df = df.slice(total_offset as i64, chunk_size);
-            //We force all objects to string-representations here
-            if let Some(s) = convert_to_string(df.column("object").unwrap()) {
-                df.with_column(s).unwrap();
-            }
+        // holds the buffers that will be written
+        let mut result_buf = Vec::with_capacity(n_threads);
+        while n_rows_finished < len {
+            let par_iter = (0..n_threads).into_par_iter().map(|thread_no| {
+                let thread_offset = thread_no * chunk_size;
+                let total_offset = n_rows_finished + thread_offset;
+                let mut df = df.slice(total_offset as i64, chunk_size);
+                //We force all objects to string-representations here
+                if let Some(s) = convert_to_string(df.column("object").unwrap()) {
+                    df.with_column(s).unwrap();
+                }
 
-            let cols = df.get_columns();
+                let cols = df.get_columns();
 
-            // Safety:
-            // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
-            // the vectors the buffer pool, the series have already been removed from the buffers
-            // in other words, the lifetime does not leave this scope
-            let cols = unsafe { std::mem::transmute::<&Vec<Series>, &Vec<Series>>(cols) };
-            let mut write_buffer = write_buffer_pool.get();
+                // Safety:
+                // the bck thinks the lifetime is bounded to write_buffer_pool, but at the time we return
+                // the vectors the buffer pool, the series have already been removed from the buffers
+                // in other words, the lifetime does not leave this scope
+                let cols = unsafe { std::mem::transmute::<&Vec<Series>, &Vec<Series>>(cols) };
+                let mut write_buffer = write_buffer_pool.get();
 
-            // don't use df.empty, won't work if there are columns.
-            if df.height() == 0 {
-                return write_buffer;
-            }
+                // don't use df.empty, won't work if there are columns.
+                if df.height() == 0 {
+                    return write_buffer;
+                }
 
-            let any_value_iters = cols.iter().map(|s| s.iter());
-            let mut col_iters = any_value_iter_pool.get();
-            col_iters.extend(any_value_iters);
+                let any_value_iters = cols.iter().map(|s| s.iter());
+                let mut col_iters = any_value_iter_pool.get();
+                col_iters.extend(any_value_iters);
 
-            let mut finished = false;
-            // loop rows
-            while !finished {
-                let mut any_values = vec![];
-                for col in &mut col_iters {
-                    match col.next() {
-                        Some(value) => any_values.push(value),
-                        None => {
-                            finished = true;
-                            break;
+                let mut finished = false;
+                // loop rows
+                while !finished {
+                    let mut any_values = vec![];
+                    for col in &mut col_iters {
+                        match col.next() {
+                            Some(value) => any_values.push(value),
+                            None => {
+                                finished = true;
+                                break;
+                            }
+                        }
+                    }
+                    if !any_values.is_empty() {
+                        match triple_type {
+                            TripleType::ObjectProperty => {
+                                write_object_property_triple(&mut write_buffer, any_values, verb);
+                            }
+                            TripleType::StringProperty => {
+                                write_string_property_triple(&mut write_buffer, any_values, verb);
+                            }
+                            TripleType::NonStringProperty => {
+                                write_non_string_property_triple(
+                                    &mut write_buffer,
+                                    dt_str.unwrap(),
+                                    any_values,
+                                    verb
+                                );
+                            }
                         }
                     }
                 }
-                if !any_values.is_empty() {
-                    match triple_type {
-                        TripleType::ObjectProperty => {
-                            write_object_property_triple(&mut write_buffer, any_values, verb);
-                        }
-                        TripleType::StringProperty => {
-                            write_string_property_triple(&mut write_buffer, any_values, verb);
-                        }
-                        TripleType::NonStringProperty => {
-                            write_non_string_property_triple(
-                                &mut write_buffer,
-                                dt_str.unwrap(),
-                                any_values,
-                                verb
-                            );
-                        }
-                    }
-                }
+
+                // return buffers to the pool
+                col_iters.clear();
+                any_value_iter_pool.set(col_iters);
+
+                write_buffer
+            });
+            // rayon will ensure the right order
+            result_buf.par_extend(par_iter);
+
+            for mut buf in result_buf.drain(..) {
+                let _ = writer.write(&buf).map_err(|x| MappingError::WriteNTriplesError(x));
+                buf.clear();
+                write_buffer_pool.set(buf);
             }
 
-            // return buffers to the pool
-            col_iters.clear();
-            any_value_iter_pool.set(col_iters);
-
-            write_buffer
-        });
-        // rayon will ensure the right order
-        result_buf.par_extend(par_iter);
-
-        for mut buf in result_buf.drain(..) {
-            let _ = writer.write(&buf).map_err(|x|MappingError::WriteNTriplesError(x));
-            buf.clear();
-            write_buffer_pool.set(buf);
+            n_rows_finished += total_rows_per_pool_iter;
         }
-
-        n_rows_finished += total_rows_per_pool_iter;
+        Ok(())
     }
-    Ok(())
-}
 
 fn write_string_property_triple(f: &mut Vec<u8>, mut any_values: Vec<AnyValue>, v:&str) {
     let lang_opt = if let AnyValue::Utf8(lang) = any_values.pop().unwrap() {

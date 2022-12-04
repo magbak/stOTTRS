@@ -38,7 +38,7 @@ impl Triplestore {
 
     fn query_parsed(&mut self, query: &Query) -> Result<QueryResult, SparqlError> {
         if !self.deduplicated {
-            self.deduplicate()
+            self.deduplicate().map_err(|x|SparqlError::DeduplicationError(x))?;
         }
         toggle_string_cache(true);
         let context = Context::new();
